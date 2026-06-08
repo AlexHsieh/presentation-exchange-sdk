@@ -1,5 +1,5 @@
 {
-  "name": "@iamhuman/presentation-exchange-sdk",
+  "name": "@iamhuman.link/presentation-exchange-sdk",
   "version": "0.1.0",
   "description": "Server-side Presentation Exchange SDK for registered app backends.",
   "type": "module",
