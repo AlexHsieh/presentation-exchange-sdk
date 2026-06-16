@@ -167,7 +167,7 @@ export class PresentationService {
     });
 
     const acceptedProviderDids = providerDidsForEnvironment(
-      this.options.appConfig.environment,
+      this.options.deploymentEnvironment,
       this.options.acceptedCredentialProviders,
     );
     const verified = await verifyAndNormalizeSubmission({

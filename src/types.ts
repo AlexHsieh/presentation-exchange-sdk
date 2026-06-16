@@ -33,7 +33,6 @@ export interface RequestCredentialTypeConfig {
 export interface PresentationAppConfig {
   appId: string;
   tenantId: string;
-  environment: RegistryEnvironment;
   trustedRequestIssuerDid: string;
   requestCredentialTypes: RequestCredentialTypeConfig[];
   allowedOrigins: string[];
@@ -81,6 +80,7 @@ export type CredentialStatusVerifier = (input: CredentialStatusVerificationInput
 
 export interface PresentationServiceOptions {
   appConfig: PresentationAppConfig;
+  deploymentEnvironment: RegistryEnvironment;
   requestIssuerDid?: RequestIssuerDid;
   acceptedCredentialProviders?: AcceptedCredentialProviders;
   credentialStatusVerifier?: CredentialStatusVerifier;

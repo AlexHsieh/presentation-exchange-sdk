@@ -10,7 +10,6 @@ import type {
   TargetCredentialTypeValue,
 } from './types.js';
 
-const registryEnvironments = new Set<RegistryEnvironment>(['development', 'test', 'stage', 'production']);
 const appStatuses = new Set(['draft', 'active', 'suspended', 'revoked']);
 const targetCredentialTypes = new Set<string>(Object.values(TargetCredentialType));
 
@@ -42,9 +41,6 @@ export function validatePresentationAppConfig(appConfig: PresentationAppConfig):
     if (!isNonEmptyString(appConfig[field])) {
       throw sdkError('APP_NOT_REGISTERED', `App config is missing ${field}`, { field });
     }
-  }
-  if (!registryEnvironments.has(appConfig.environment)) {
-    throw sdkError('APP_NOT_REGISTERED', 'App config environment is invalid', { environment: appConfig.environment });
   }
   if (!appStatuses.has(appConfig.status)) {
     throw sdkError('APP_NOT_REGISTERED', 'App config status is invalid', { status: appConfig.status });

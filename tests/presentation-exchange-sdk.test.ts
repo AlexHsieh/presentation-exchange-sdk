@@ -20,6 +20,7 @@ import type { PresentationAppConfig, PresentationPolicy, RequestIssuerDid, Verif
 
 const requestType = 'VoterRequestVerifiableCredential';
 const subject = 'urn:uuid:vote-1';
+const deploymentEnvironment = 'test';
 const allowedPaths = [
   PresentationPath.Type,
   PresentationPath.ExpirationDate,
@@ -37,7 +38,6 @@ function appConfig(overrides: Partial<PresentationAppConfig> = {}): Presentation
   return {
     appId: 'vote-app',
     tenantId: 'tenant-test',
-    environment: 'test',
     trustedRequestIssuerDid: 'did:jwk:test-request-issuer',
     requestCredentialTypes: [
       {
@@ -58,7 +58,7 @@ function appConfig(overrides: Partial<PresentationAppConfig> = {}): Presentation
 }
 
 function service(config: PresentationAppConfig = appConfig()): PresentationService {
-  return new PresentationService({ appConfig: config });
+  return new PresentationService({ appConfig: config, deploymentEnvironment });
 }
 
 function policy(
@@ -126,6 +126,7 @@ describe('Presentation Exchange SDK config and policy', () => {
       () =>
         new PresentationService({
           appConfig: appConfig({ trustedRequestIssuerDid: `${requestIssuerDid.uri}:other` }),
+          deploymentEnvironment,
           requestIssuerDid,
         }),
       'REQUEST_ISSUER_NOT_TRUSTED',
@@ -458,6 +459,7 @@ describe('Presentation request creation', () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const sdk = new PresentationService({
       appConfig: appConfig({ trustedRequestIssuerDid: requestIssuerDid.uri }),
+      deploymentEnvironment,
       requestIssuerDid,
     });
     const definition = sdk.buildPresentationDefinition({
@@ -523,10 +525,12 @@ describe('Presentation request creation', () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const inactive = new PresentationService({
       appConfig: appConfig({ trustedRequestIssuerDid: requestIssuerDid.uri, status: 'draft' }),
+      deploymentEnvironment,
       requestIssuerDid,
     });
     const active = new PresentationService({
       appConfig: appConfig({ trustedRequestIssuerDid: requestIssuerDid.uri }),
+      deploymentEnvironment,
       requestIssuerDid,
     });
     const definition = active.buildPresentationDefinition({
@@ -567,6 +571,7 @@ describe('Submission verification', () => {
     const holderDid = await DidJwk.create();
     const sdk = new PresentationService({
       appConfig: appConfig(),
+      deploymentEnvironment,
       acceptedCredentialProviders: { test: [issuerDid.uri] },
     });
     const storedPresentationDefinition = sdk.buildPresentationDefinition({
@@ -614,6 +619,7 @@ describe('Submission verification', () => {
     const holderDid = await DidJwk.create();
     const sdk = new PresentationService({
       appConfig: appConfig(),
+      deploymentEnvironment,
       acceptedCredentialProviders: { test: [issuerDid.uri] },
       credentialStatusVerifier: async () => false,
     });
