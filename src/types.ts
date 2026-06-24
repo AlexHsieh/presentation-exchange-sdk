@@ -183,6 +183,7 @@ export interface VerifySubmissionInput {
 
 export interface VerifiedPresentation {
   holderDid: string;
+  walletDid: string;
   issuerDid: string;
   credentialJwt: string;
   credentialTypes: string[];

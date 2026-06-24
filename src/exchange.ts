@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { PresentationExchange, VerifiableCredential, VerifiablePresentation, type PresentationDefinitionV2 } from '@web5/credentials';
+import { Jwt, PresentationExchange, VerifiableCredential, VerifiablePresentation, type PresentationDefinitionV2 } from '@web5/credentials';
 import { PresentationPath } from './constants.js';
 import { sdkError } from './errors.js';
 import { extractRequiredPaths, validateWithPresentationExchange } from './definition.js';
@@ -69,9 +69,17 @@ export async function verifyAndNormalizeSubmission(params: {
   const { input, acceptedProviderDids, credentialStatusVerifier, expectedTargetCredentialType } = params;
   const submission = normalizeSubmissionEnvelope(input.submission);
   let parsedVp: VerifiablePresentation;
+  let walletDid: string;
 
   try {
-    await VerifiablePresentation.verify({ vpJwt: submission.vpJwt });
+    const verifiedVp = await VerifiablePresentation.verify({ vpJwt: submission.vpJwt });
+    walletDid = String(verifiedVp.issuer ?? '');
+    if (!walletDid) {
+      walletDid = String(Jwt.parse({ jwt: submission.vpJwt }).decoded.payload.iss ?? '');
+    }
+    if (!walletDid) {
+      throw new Error('VP issuer is missing');
+    }
     parsedVp = VerifiablePresentation.parseJwt({ vpJwt: submission.vpJwt });
   } catch (error) {
     throw sdkError('VP_VERIFY_FAILED', messageFrom(error), { cause: messageFrom(error) });
@@ -141,6 +149,7 @@ export async function verifyAndNormalizeSubmission(params: {
 
   return {
     holderDid: String(parsedVp.holder ?? ''),
+    walletDid,
     issuerDid,
     credentialJwt,
     credentialTypes,

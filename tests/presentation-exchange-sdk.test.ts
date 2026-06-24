@@ -81,6 +81,8 @@ async function generatedRequestIssuerDid(): Promise<RequestIssuerDid> {
 async function signedVpFor(params: {
   issuerDid: Awaited<ReturnType<typeof DidJwk.create>>;
   holderDid: Awaited<ReturnType<typeof DidJwk.create>>;
+  signerDid?: Awaited<ReturnType<typeof DidJwk.create>>;
+  presentationHolder?: string;
   credentialSubject?: Record<string, unknown>;
   credentialType?: string;
   expirationDate?: string;
@@ -104,10 +106,10 @@ async function signedVpFor(params: {
   });
   const credentialJwt = await credential.sign({ did: params.issuerDid });
   const presentation = await VerifiablePresentation.create({
-    holder: params.holderDid.uri,
+    holder: params.presentationHolder ?? params.holderDid.uri,
     vcJwts: [credentialJwt],
   });
-  const vpJwt = await presentation.sign({ did: params.holderDid });
+  const vpJwt = await presentation.sign({ did: params.signerDid ?? params.holderDid });
   return { vpJwt, credentialJwt, credentialSubject };
 }
 
@@ -600,6 +602,7 @@ describe('Submission verification', () => {
 
     expect(verified).toMatchObject({
       holderDid: holderDid.uri,
+      walletDid: holderDid.uri,
       issuerDid: issuerDid.uri,
       credentialJwt,
       credentialTypes: expect.arrayContaining([TargetCredentialType.Human]),
@@ -612,6 +615,49 @@ describe('Submission verification', () => {
       },
     });
     expect(verified.vpDigest).toHaveLength(64);
+  });
+
+  it('returns the VP signer DID as walletDid when holder is app-scoped', async () => {
+    const issuerDid = await DidJwk.create();
+    const holderDid = await DidJwk.create();
+    const walletDid = await DidJwk.create();
+    const appScopedHolder = 'app-scoped-passport-holder-id';
+    const sdk = new PresentationService({
+      appConfig: appConfig(),
+      deploymentEnvironment,
+      acceptedCredentialProviders: { test: [issuerDid.uri] },
+    });
+    const storedPresentationDefinition = sdk.buildPresentationDefinition({
+      id: 'pd-submit-app-scoped-holder',
+      requestType,
+      targetCredentialType: TargetCredentialType.Human,
+      subject,
+      policy: policy(),
+      attributes: {
+        name: true,
+        profilePicture: true,
+        profileUrl: true,
+        socialMedia: ['facebook'],
+      },
+    });
+    const pdHash = computePresentationDefinitionHash(storedPresentationDefinition);
+    const { vpJwt } = await signedVpFor({
+      issuerDid,
+      holderDid,
+      signerDid: walletDid,
+      presentationHolder: appScopedHolder,
+    });
+
+    const verified = await sdk.verifySubmission(
+      verifyInput({
+        vpJwt,
+        storedPresentationDefinition,
+        pdHash,
+      }),
+    );
+
+    expect(verified.holderDid).toBe(appScopedHolder);
+    expect(verified.walletDid).toBe(walletDid.uri);
   });
 
   it('rejects binding, provider, target type, and status verification failures', async () => {
