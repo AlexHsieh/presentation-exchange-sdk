@@ -4,7 +4,6 @@ import type { PersonalDataSource, PolicyTier, TargetCredentialType } from './con
 export type PolicyTierValue = (typeof PolicyTier)[keyof typeof PolicyTier];
 export type PersonalDataSourceValue = (typeof PersonalDataSource)[keyof typeof PersonalDataSource];
 export type TargetCredentialTypeValue = (typeof TargetCredentialType)[keyof typeof TargetCredentialType];
-export type RegistryEnvironment = 'development' | 'test' | 'stage' | 'production';
 export type AppStatus = 'draft' | 'active' | 'suspended' | 'revoked';
 
 export type SemanticAttribute =
@@ -40,6 +39,7 @@ export interface PresentationAppConfig {
   allowedVcSubmissionDomains: string[];
   allowedTargetCredentialTypes: TargetCredentialTypeValue[];
   allowedPresentationPaths: string[];
+  acceptedCredentialProviders: string[];
   status: AppStatus;
   version: string;
   [key: string]: unknown;
@@ -64,8 +64,6 @@ export interface RequestIssuerDid {
   [key: string]: unknown;
 }
 
-export type AcceptedCredentialProviders = Partial<Record<RegistryEnvironment, string | string[]>>;
-
 export type CredentialStatusVerificationInput = {
   statusList?: {
     index: number;
@@ -80,9 +78,7 @@ export type CredentialStatusVerifier = (input: CredentialStatusVerificationInput
 
 export interface PresentationServiceOptions {
   appConfig: PresentationAppConfig;
-  deploymentEnvironment: RegistryEnvironment;
   requestIssuerDid?: RequestIssuerDid;
-  acceptedCredentialProviders?: AcceptedCredentialProviders;
   credentialStatusVerifier?: CredentialStatusVerifier;
 }
 

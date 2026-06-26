@@ -20,7 +20,6 @@ import type { PresentationAppConfig, PresentationPolicy, RequestIssuerDid, Verif
 
 const requestType = 'VoterRequestVerifiableCredential';
 const subject = 'urn:uuid:vote-1';
-const deploymentEnvironment = 'test';
 const allowedPaths = [
   PresentationPath.Type,
   PresentationPath.ExpirationDate,
@@ -51,6 +50,7 @@ function appConfig(overrides: Partial<PresentationAppConfig> = {}): Presentation
     allowedVcSubmissionDomains: ['vote.example'],
     allowedTargetCredentialTypes: [TargetCredentialType.Human, TargetCredentialType.Uniqueness],
     allowedPresentationPaths: allowedPaths,
+    acceptedCredentialProviders: ['did:jwk:test-provider'],
     status: 'active',
     version: '2026-06-03.1',
     ...overrides,
@@ -58,7 +58,7 @@ function appConfig(overrides: Partial<PresentationAppConfig> = {}): Presentation
 }
 
 function service(config: PresentationAppConfig = appConfig()): PresentationService {
-  return new PresentationService({ appConfig: config, deploymentEnvironment });
+  return new PresentationService({ appConfig: config });
 }
 
 function policy(
@@ -122,13 +122,20 @@ describe('Presentation Exchange SDK config and policy', () => {
 
   it('validates app config and rejects untrusted request issuer DID', async () => {
     expect(() => validatePresentationAppConfig(appConfig())).not.toThrow();
+    expectSdkCode(
+      () =>
+        validatePresentationAppConfig({
+          ...appConfig(),
+          acceptedCredentialProviders: [],
+        }),
+      'APP_NOT_REGISTERED',
+    );
 
     const requestIssuerDid = await generatedRequestIssuerDid();
     expectSdkCode(
       () =>
         new PresentationService({
           appConfig: appConfig({ trustedRequestIssuerDid: `${requestIssuerDid.uri}:other` }),
-          deploymentEnvironment,
           requestIssuerDid,
         }),
       'REQUEST_ISSUER_NOT_TRUSTED',
@@ -461,7 +468,6 @@ describe('Presentation request creation', () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const sdk = new PresentationService({
       appConfig: appConfig({ trustedRequestIssuerDid: requestIssuerDid.uri }),
-      deploymentEnvironment,
       requestIssuerDid,
     });
     const definition = sdk.buildPresentationDefinition({
@@ -527,12 +533,10 @@ describe('Presentation request creation', () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const inactive = new PresentationService({
       appConfig: appConfig({ trustedRequestIssuerDid: requestIssuerDid.uri, status: 'draft' }),
-      deploymentEnvironment,
       requestIssuerDid,
     });
     const active = new PresentationService({
       appConfig: appConfig({ trustedRequestIssuerDid: requestIssuerDid.uri }),
-      deploymentEnvironment,
       requestIssuerDid,
     });
     const definition = active.buildPresentationDefinition({
@@ -572,9 +576,7 @@ describe('Submission verification', () => {
     const issuerDid = await DidJwk.create();
     const holderDid = await DidJwk.create();
     const sdk = new PresentationService({
-      appConfig: appConfig(),
-      deploymentEnvironment,
-      acceptedCredentialProviders: { test: [issuerDid.uri] },
+      appConfig: appConfig({ acceptedCredentialProviders: [issuerDid.uri] }),
     });
     const storedPresentationDefinition = sdk.buildPresentationDefinition({
       id: 'pd-submit',
@@ -623,9 +625,7 @@ describe('Submission verification', () => {
     const walletDid = await DidJwk.create();
     const appScopedHolder = 'app-scoped-passport-holder-id';
     const sdk = new PresentationService({
-      appConfig: appConfig(),
-      deploymentEnvironment,
-      acceptedCredentialProviders: { test: [issuerDid.uri] },
+      appConfig: appConfig({ acceptedCredentialProviders: [issuerDid.uri] }),
     });
     const storedPresentationDefinition = sdk.buildPresentationDefinition({
       id: 'pd-submit-app-scoped-holder',
@@ -660,13 +660,43 @@ describe('Submission verification', () => {
     expect(verified.walletDid).toBe(walletDid.uri);
   });
 
+  it('uses accepted credential providers from app config', async () => {
+    const issuerDid = await DidJwk.create();
+    const holderDid = await DidJwk.create();
+    const sdk = new PresentationService({ appConfig: appConfig() });
+    const storedPresentationDefinition = sdk.buildPresentationDefinition({
+      id: 'pd-submit-default-provider',
+      requestType,
+      targetCredentialType: TargetCredentialType.Human,
+      subject,
+      policy: policy(),
+      attributes: { name: true },
+    });
+    const pdHash = computePresentationDefinitionHash(storedPresentationDefinition);
+    const { vpJwt } = await signedVpFor({ issuerDid, holderDid });
+
+    try {
+      await sdk.verifySubmission(
+        verifyInput({
+          vpJwt,
+          storedPresentationDefinition,
+          pdHash,
+        }),
+      );
+    } catch (error) {
+      expect(error).toBeInstanceOf(PresentationSdkError);
+      expect((error as PresentationSdkError).code).toBe('CREDENTIAL_PROVIDER_INVALID');
+      expect((error as PresentationSdkError).details.acceptedProviderDids).toEqual(['did:jwk:test-provider']);
+      return;
+    }
+    throw new Error('Expected configured provider rejection');
+  });
+
   it('rejects binding, provider, target type, and status verification failures', async () => {
     const issuerDid = await DidJwk.create();
     const holderDid = await DidJwk.create();
     const sdk = new PresentationService({
-      appConfig: appConfig(),
-      deploymentEnvironment,
-      acceptedCredentialProviders: { test: [issuerDid.uri] },
+      appConfig: appConfig({ acceptedCredentialProviders: [issuerDid.uri] }),
       credentialStatusVerifier: async () => false,
     });
     const storedPresentationDefinition = service().buildPresentationDefinition({

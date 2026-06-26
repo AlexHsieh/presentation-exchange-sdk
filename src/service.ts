@@ -8,7 +8,6 @@ import {
   assertRequestIssuerTrusted,
   assertTargetCredentialTypeAllowed,
   getRequestCredentialType,
-  providerDidsForEnvironment,
   validatePresentationAppConfig,
 } from './config.js';
 import { computePresentationDefinitionHash, encodePresentationDefinition } from './canonicalization.js';
@@ -166,13 +165,9 @@ export class PresentationService {
       policy: input.policy,
     });
 
-    const acceptedProviderDids = providerDidsForEnvironment(
-      this.options.deploymentEnvironment,
-      this.options.acceptedCredentialProviders,
-    );
     const verified = await verifyAndNormalizeSubmission({
       input: { ...input, submission },
-      acceptedProviderDids,
+      acceptedProviderDids: this.options.appConfig.acceptedCredentialProviders,
       credentialStatusVerifier: this.options.credentialStatusVerifier,
       expectedTargetCredentialType: input.expected.targetCredentialType,
     });

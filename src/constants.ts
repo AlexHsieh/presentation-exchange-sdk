@@ -20,13 +20,6 @@ export const TargetCredentialType = {
   Uniqueness: 'UniquenessVerifiableCredential',
 } as const;
 
-export const AcceptedCredentialProviderDid = {
-  stage:
-    'did:jwk:eyJjcnYiOiJFZDI1NTE5Iiwia3R5IjoiT0tQIiwieCI6InBwdDhfVmd5TzhVNFB4aFZ0M09laWZwLUhSU0xUWVRrRzRYMS1iUTBoRGciLCJraWQiOiJKOGhGdWhBbkV6Z2xSY2ZLaDlJbklidnlDTlA5WlAxS3NZQjhyQTdJdGtFIiwiYWxnIjoiRWREU0EifQ',
-  production:
-    'did:jwk:eyJjcnYiOiJFZDI1NTE5Iiwia3R5IjoiT0tQIiwieCI6IndwcjhuNC1GSDgzZ1VNYkpRZV9QcnFGLTg3dDRDRU5rRmZQRGNEZjJqak0iLCJraWQiOiI1Y3dIY3lXMHhuYmQxU0tPb1JiMHpTdzNyckkyWlBlbGY4Um9BYkhYYzdvIiwiYWxnIjoiRWREU0EifQ',
-} as const;
-
 export const RequestVcType = {
   PresentationDefinitionTargetRequest: 'PresentationDefinitionTargetRequestVerifiableCredential',
 } as const;
@@ -63,7 +56,6 @@ export const constants = {
   PersonalDataSource,
   PERSONAL_DATA_SOURCE_VALUES,
   TargetCredentialType,
-  AcceptedCredentialProviderDid,
   RequestVcType,
   PresentationPath,
   SemanticAttributePath,

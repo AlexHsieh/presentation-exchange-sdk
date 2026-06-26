@@ -1,10 +1,8 @@
-import { AcceptedCredentialProviderDid, PresentationPath, TargetCredentialType } from './constants.js';
+import { PresentationPath, TargetCredentialType } from './constants.js';
 import { sdkError, type PresentationSdkErrorCode } from './errors.js';
 import { normalizePresentationPath } from './policy.js';
 import type {
-  AcceptedCredentialProviders,
   PresentationAppConfig,
-  RegistryEnvironment,
   RequestCredentialTypeConfig,
   RequestIssuerDid,
   TargetCredentialTypeValue,
@@ -68,10 +66,16 @@ export function validatePresentationAppConfig(appConfig: PresentationAppConfig):
     'allowedVcSubmissionDomains',
     'allowedTargetCredentialTypes',
     'allowedPresentationPaths',
+    'acceptedCredentialProviders',
   ] as const) {
     if (!Array.isArray(appConfig[field])) {
       throw sdkError('APP_NOT_REGISTERED', `App config ${field} must be an array`, { field });
     }
+  }
+  if (appConfig.acceptedCredentialProviders.length === 0 || !appConfig.acceptedCredentialProviders.every(isNonEmptyString)) {
+    throw sdkError('APP_NOT_REGISTERED', 'App config acceptedCredentialProviders must include at least one DID', {
+      field: 'acceptedCredentialProviders',
+    });
   }
 
   return appConfig;
@@ -143,15 +147,6 @@ export function assertAllowedUrlHost(url: string, allowedHosts: string[], errorC
   if (!allowed.includes(host) && !allowed.includes(hostname)) {
     throw sdkError(errorCode, 'URL host is not allowlisted', { url, host, allowedHosts });
   }
-}
-
-export function providerDidsForEnvironment(
-  environment: RegistryEnvironment,
-  overrides?: AcceptedCredentialProviders,
-): string[] {
-  const configured = overrides?.[environment];
-  if (configured) return Array.isArray(configured) ? configured : [configured];
-  return environment === 'production' ? [AcceptedCredentialProviderDid.production] : [AcceptedCredentialProviderDid.stage];
 }
 
 function validateRequestCredentialTypeEntry(entry: RequestCredentialTypeConfig): void {
