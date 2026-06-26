@@ -35,7 +35,7 @@ export function validatePresentationAppConfig(appConfig: PresentationAppConfig):
   if (!isNonEmptyString(appConfig.appId)) {
     throw sdkError('APP_NOT_REGISTERED', 'App config is missing appId');
   }
-  for (const field of ['tenantId', 'trustedRequestIssuerDid', 'version'] as const) {
+  for (const field of ['tenantId', 'appDid', 'version'] as const) {
     if (!isNonEmptyString(appConfig[field])) {
       throw sdkError('APP_NOT_REGISTERED', `App config is missing ${field}`, { field });
     }
@@ -83,9 +83,9 @@ export function validatePresentationAppConfig(appConfig: PresentationAppConfig):
 
 export function assertRequestIssuerTrusted(appConfig: PresentationAppConfig, requestIssuerDid?: RequestIssuerDid): void {
   if (!requestIssuerDid) return;
-  if (requestIssuerDid.uri !== appConfig.trustedRequestIssuerDid) {
+  if (requestIssuerDid.uri !== appConfig.appDid) {
     throw sdkError('REQUEST_ISSUER_NOT_TRUSTED', 'Request issuer DID does not match app config', {
-      expected: appConfig.trustedRequestIssuerDid,
+      expected: appConfig.appDid,
       actual: requestIssuerDid.uri,
     });
   }

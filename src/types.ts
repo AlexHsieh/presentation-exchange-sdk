@@ -32,7 +32,7 @@ export interface RequestCredentialTypeConfig {
 export interface PresentationAppConfig {
   appId: string;
   tenantId: string;
-  trustedRequestIssuerDid: string;
+  appDid: string;
   requestCredentialTypes: RequestCredentialTypeConfig[];
   allowedOrigins: string[];
   allowedPdFetchDomains: string[];

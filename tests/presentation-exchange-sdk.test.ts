@@ -37,7 +37,7 @@ function appConfig(overrides: Partial<PresentationAppConfig> = {}): Presentation
   return {
     appId: 'vote-app',
     tenantId: 'tenant-test',
-    trustedRequestIssuerDid: 'did:jwk:test-request-issuer',
+    appDid: 'did:jwk:test-request-issuer',
     requestCredentialTypes: [
       {
         type: requestType,
@@ -135,7 +135,7 @@ describe('Presentation Exchange SDK config and policy', () => {
     expectSdkCode(
       () =>
         new PresentationService({
-          appConfig: appConfig({ trustedRequestIssuerDid: `${requestIssuerDid.uri}:other` }),
+          appConfig: appConfig({ appDid: `${requestIssuerDid.uri}:other` }),
           requestIssuerDid,
         }),
       'REQUEST_ISSUER_NOT_TRUSTED',
@@ -467,7 +467,7 @@ describe('Presentation request creation', () => {
   it('signs wallet-compatible request envelopes and rejects reserved subject overwrites', async () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const sdk = new PresentationService({
-      appConfig: appConfig({ trustedRequestIssuerDid: requestIssuerDid.uri }),
+      appConfig: appConfig({ appDid: requestIssuerDid.uri }),
       requestIssuerDid,
     });
     const definition = sdk.buildPresentationDefinition({
@@ -532,11 +532,11 @@ describe('Presentation request creation', () => {
   it('rejects inactive apps and disallowed request URLs', async () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const inactive = new PresentationService({
-      appConfig: appConfig({ trustedRequestIssuerDid: requestIssuerDid.uri, status: 'draft' }),
+      appConfig: appConfig({ appDid: requestIssuerDid.uri, status: 'draft' }),
       requestIssuerDid,
     });
     const active = new PresentationService({
-      appConfig: appConfig({ trustedRequestIssuerDid: requestIssuerDid.uri }),
+      appConfig: appConfig({ appDid: requestIssuerDid.uri }),
       requestIssuerDid,
     });
     const definition = active.buildPresentationDefinition({
