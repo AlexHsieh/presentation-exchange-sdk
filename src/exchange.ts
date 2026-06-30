@@ -7,7 +7,10 @@ import { normalizePresentationPath, tierFromCredentialTypes } from './policy.js'
 import type {
   CredentialStatusVerifier,
   PresentationSubmissionEnvelope,
+  TargetCredentialTypeValue,
+  VerifiedCredential,
   VerifiedPresentation,
+  VerifyCredentialInput,
   VerifySubmissionInput,
 } from './types.js';
 
@@ -64,7 +67,7 @@ export async function verifyAndNormalizeSubmission(params: {
   input: VerifySubmissionInput;
   acceptedProviderDids: string[];
   credentialStatusVerifier?: CredentialStatusVerifier;
-  expectedTargetCredentialType?: string;
+  expectedTargetCredentialType?: TargetCredentialTypeValue;
 }): Promise<VerifiedPresentation> {
   const { input, acceptedProviderDids, credentialStatusVerifier, expectedTargetCredentialType } = params;
   const submission = normalizeSubmissionEnvelope(input.submission);
@@ -96,6 +99,30 @@ export async function verifyAndNormalizeSubmission(params: {
   }
 
   const credentialJwt = extractPrimaryCredentialJwt(parsedVp);
+  const verifiedCredential = await verifyCredentialJwt(
+    {
+      credentialJwt,
+      acceptedProviderDids,
+      expectedTargetCredentialType,
+    },
+    credentialStatusVerifier,
+    input,
+  );
+
+  return {
+    holderDid: String(parsedVp.holder ?? ''),
+    walletDid,
+    ...verifiedCredential,
+    vpDigest: createHash('sha256').update(submission.vpJwt).digest('hex'),
+  };
+}
+
+export async function verifyCredentialJwt(
+  input: VerifyCredentialInput,
+  credentialStatusVerifier?: CredentialStatusVerifier,
+  submissionInput?: VerifySubmissionInput,
+): Promise<VerifiedCredential> {
+  const { credentialJwt, acceptedProviderDids = [], expectedTargetCredentialType } = input;
   let credential: VerifiableCredential;
   try {
     credential = VerifiableCredential.parseJwt({ vcJwt: credentialJwt });
@@ -107,7 +134,7 @@ export async function verifyAndNormalizeSubmission(params: {
   }
 
   const issuerDid = issuerFromCredential(credential);
-  if (!acceptedProviderDids.includes(issuerDid)) {
+  if (acceptedProviderDids.length > 0 && !acceptedProviderDids.includes(issuerDid)) {
     throw sdkError('CREDENTIAL_PROVIDER_INVALID', 'Credential issuer is not an accepted provider', {
       issuerDid,
       acceptedProviderDids,
@@ -138,7 +165,9 @@ export async function verifyAndNormalizeSubmission(params: {
   }
 
   const credentialSubject = subjectFromCredential(credential);
-  validatePolicyAttributes(input, credentialSubject, credentialTypes);
+  if (submissionInput) {
+    validatePolicyAttributes(submissionInput, credentialSubject, credentialTypes);
+  }
   const statusList = statusListFromCredential(credential);
   if (credentialStatusVerifier) {
     const ok = await credentialStatusVerifier({ statusList, credentialJwt, credentialSubject });
@@ -148,8 +177,6 @@ export async function verifyAndNormalizeSubmission(params: {
   }
 
   return {
-    holderDid: String(parsedVp.holder ?? ''),
-    walletDid,
     issuerDid,
     credentialJwt,
     credentialTypes,
@@ -159,7 +186,6 @@ export async function verifyAndNormalizeSubmission(params: {
     expirationDate: String(expirationDate),
     ...(statusList ? { statusList } : {}),
     normalized: normalizedSubject(credentialSubject),
-    vpDigest: createHash('sha256').update(submission.vpJwt).digest('hex'),
   };
 }
 

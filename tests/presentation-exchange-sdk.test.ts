@@ -1,12 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DidJwk } from '@web5/dids';
-import { VerifiableCredential, VerifiablePresentation, type PresentationDefinitionV2 } from '@web5/credentials';
+import { StatusListCredential, VerifiableCredential, VerifiablePresentation, type PresentationDefinitionV2 } from '@web5/credentials';
 import {
   PersonalDataSource,
   PolicyTier,
   PresentationPath,
   PresentationSdkError,
   PresentationService,
+  StatusListClient,
   TargetCredentialType,
   buildPresentationDefinitionTemplate,
   computePresentationDefinitionHash,
@@ -17,6 +18,10 @@ import {
   validatePresentationDefinition,
 } from '../src/index.js';
 import type { PresentationAppConfig, PresentationPolicy, RequestIssuerDid, VerifySubmissionInput } from '../src/index.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const requestType = 'VoterRequestVerifiableCredential';
 const subject = 'urn:uuid:vote-1';
@@ -122,6 +127,7 @@ describe('Presentation Exchange SDK config and policy', () => {
 
   it('validates app config and rejects untrusted request issuer DID', async () => {
     expect(() => validatePresentationAppConfig(appConfig())).not.toThrow();
+    expect(() => validatePresentationAppConfig(appConfig({ status: 'testing' }))).not.toThrow();
     expectSdkCode(
       () =>
         validatePresentationAppConfig({
@@ -139,6 +145,26 @@ describe('Presentation Exchange SDK config and policy', () => {
           requestIssuerDid,
         }),
       'REQUEST_ISSUER_NOT_TRUSTED',
+    );
+  });
+
+  it('validates statusListUrl when present', () => {
+    expect(() =>
+      validatePresentationAppConfig(
+        appConfig({
+          statusListUrl: 'https://status.example/statuslist',
+        }),
+      ),
+    ).not.toThrow();
+
+    expectSdkCode(
+      () =>
+        validatePresentationAppConfig(
+          appConfig({
+            statusListUrl: 'ftp://status.example/statuslist',
+          }),
+        ),
+      'APP_NOT_REGISTERED',
     );
   });
 
@@ -202,6 +228,67 @@ describe('Presentation Exchange SDK config and policy', () => {
         attributes: { nationality: ['TWN'] },
       }),
     'ATTRIBUTE_NOT_ALLOWED');
+  });
+});
+
+describe('StatusListClient', () => {
+  it('builds status-list URLs and rejects URLs outside the configured base', async () => {
+    const client = new StatusListClient({ statusListUrl: 'https://status.example/statuslist' });
+
+    expect(client.buildStatusListUrl('abc 123')).toBe('https://status.example/statuslist/abc%20123');
+    await expectRejectsSdkCode(client.getStatusList('https://evil.example/statuslist/abc'), 'STATUS_LIST_URL_NOT_ALLOWED');
+  });
+
+  it('fetches, verifies, caches, and stores status-list credentials', async () => {
+    vi.spyOn(VerifiableCredential, 'verify').mockResolvedValue({} as never);
+    vi.spyOn(VerifiableCredential, 'parseJwt').mockReturnValue({
+      vcDataModel: { id: 'status-vc-1', type: ['VerifiableCredential', 'StatusList2021Credential'] },
+    } as never);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ statusListJwt: 'status-jwt' }), {
+      headers: {
+        etag: 'etag-1',
+        'last-modified': 'Tue, 30 Jun 2026 00:00:00 GMT',
+      },
+    }));
+    const save = vi.fn();
+    const client = new StatusListClient({
+      statusListUrl: 'https://status.example/statuslist',
+      fetch: fetchMock as never,
+      store: { save },
+      now: () => new Date('2026-06-30T00:00:00Z'),
+    });
+
+    const first = await client.getStatusList('https://status.example/statuslist/list-1');
+    const second = await client.getStatusList('https://status.example/statuslist/list-1');
+
+    expect(first).toMatchObject({
+      statusListUrl: 'https://status.example/statuslist/list-1',
+      statusListJwt: 'status-jwt',
+      statusListCredential: { id: 'status-vc-1' },
+      etag: 'etag-1',
+    });
+    expect(second.statusListJwt).toBe('status-jwt');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns false when the credential is revoked', async () => {
+    vi.spyOn(VerifiableCredential, 'verify').mockResolvedValue({} as never);
+    vi.spyOn(VerifiableCredential, 'parseJwt')
+      .mockReturnValueOnce({ vcDataModel: { id: 'status-vc-1' } } as never)
+      .mockReturnValueOnce({ vcDataModel: { id: 'credential-1' } } as never);
+    vi.spyOn(StatusListCredential, 'validateCredentialInStatusList').mockReturnValue(true);
+    const client = new StatusListClient({
+      statusListUrl: 'https://status.example/statuslist',
+      fetch: vi.fn(async () => new Response(JSON.stringify({ statusListJwt: 'status-jwt' }))) as never,
+    });
+
+    await expect(
+      client.verifyCredentialStatus({
+        credentialJwt: 'credential-jwt',
+        statusList: { index: 1, url: 'https://status.example/statuslist/list-1' },
+      }),
+    ).resolves.toBe(false);
   });
 });
 

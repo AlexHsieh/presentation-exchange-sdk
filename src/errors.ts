@@ -18,7 +18,11 @@ export type PresentationSdkErrorCode =
   | 'VP_VERIFY_FAILED'
   | 'PRESENTATION_SUBMISSION_INVALID'
   | 'CREDENTIAL_PROVIDER_INVALID'
-  | 'CREDENTIAL_STATUS_INVALID';
+  | 'CREDENTIAL_STATUS_INVALID'
+  | 'STATUS_LIST_URL_NOT_ALLOWED'
+  | 'STATUS_LIST_FETCH_FAILED'
+  | 'STATUS_LIST_INVALID'
+  | 'CREDENTIAL_REVOKED';
 
 export type PresentationSdkErrorShape = {
   code: PresentationSdkErrorCode;

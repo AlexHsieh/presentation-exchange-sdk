@@ -1,4 +1,5 @@
 export { PresentationService } from './service.js';
+export { StatusListClient, getStatusList, verifyCredentialStatus } from './status-list.js';
 export { PresentationDefinitionBuilder } from './builder.js';
 export {
   buildPresentationDefinition,

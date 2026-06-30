@@ -8,7 +8,7 @@ import type {
   TargetCredentialTypeValue,
 } from './types.js';
 
-const appStatuses = new Set(['draft', 'active', 'suspended', 'revoked']);
+const appStatuses = new Set(['draft', 'testing', 'active', 'suspended', 'revoked']);
 const targetCredentialTypes = new Set<string>(Object.values(TargetCredentialType));
 
 const requiredPathsByTarget: Record<TargetCredentialTypeValue, string[]> = {
@@ -77,6 +77,9 @@ export function validatePresentationAppConfig(appConfig: PresentationAppConfig):
       field: 'acceptedCredentialProviders',
     });
   }
+  if (appConfig.statusListUrl !== undefined) {
+    assertValidStatusListBaseUrl(appConfig.statusListUrl);
+  }
 
   return appConfig;
 }
@@ -93,7 +96,7 @@ export function assertRequestIssuerTrusted(appConfig: PresentationAppConfig, req
 
 export function assertAppActive(appConfig: PresentationAppConfig): void {
   validatePresentationAppConfig(appConfig);
-  if (appConfig.status !== 'active') {
+  if (appConfig.status !== 'active' && appConfig.status !== 'testing') {
     throw sdkError('APP_NOT_ACTIVE', 'Presentation app is not active', {
       appId: appConfig.appId,
       status: appConfig.status,
@@ -182,4 +185,27 @@ function assertRequiredPathsPresent(appConfig: PresentationAppConfig, target: Ta
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function assertValidStatusListBaseUrl(value: unknown): void {
+  if (!isNonEmptyString(value)) {
+    throw sdkError('APP_NOT_REGISTERED', 'App config statusListUrl must be a non-empty URL', {
+      field: 'statusListUrl',
+    });
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw sdkError('APP_NOT_REGISTERED', 'App config statusListUrl must be a valid URL', {
+      field: 'statusListUrl',
+      statusListUrl: value,
+    });
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw sdkError('APP_NOT_REGISTERED', 'App config statusListUrl must use http or https', {
+      field: 'statusListUrl',
+      statusListUrl: value,
+    });
+  }
 }

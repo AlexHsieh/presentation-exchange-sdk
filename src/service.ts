@@ -13,13 +13,18 @@ import {
 import { computePresentationDefinitionHash, encodePresentationDefinition } from './canonicalization.js';
 import { buildPresentationDefinition, validatePresentationDefinition } from './definition.js';
 import { sdkError } from './errors.js';
-import { normalizeSubmissionEnvelope, verifyAndNormalizeSubmission } from './exchange.js';
+import { normalizeSubmissionEnvelope, verifyAndNormalizeSubmission, verifyCredentialJwt } from './exchange.js';
+import { StatusListClient } from './status-list.js';
 import type {
   BuildPresentationDefinitionInput,
   PresentationRequestCreateInput,
   PresentationRequestEnvelope,
   PresentationServiceOptions,
+  StatusListCacheEntry,
+  StatusListReference,
+  VerifiedCredential,
   VerifiedPresentation,
+  VerifyCredentialInput,
   VerifySubmissionInput,
 } from './types.js';
 
@@ -36,9 +41,18 @@ const reservedRequestSubjectFields = new Set([
 ]);
 
 export class PresentationService {
+  private readonly statusListClient?: StatusListClient;
+
   constructor(private readonly options: PresentationServiceOptions) {
     validatePresentationAppConfig(options.appConfig);
     assertRequestIssuerTrusted(options.appConfig, options.requestIssuerDid);
+    if (options.appConfig.statusListUrl) {
+      this.statusListClient = new StatusListClient({
+        statusListUrl: options.appConfig.statusListUrl,
+        ttlMs: options.statusListTtlMs,
+        store: options.statusListStore,
+      });
+    }
   }
 
   get appConfig() {
@@ -168,7 +182,7 @@ export class PresentationService {
     const verified = await verifyAndNormalizeSubmission({
       input: { ...input, submission },
       acceptedProviderDids: this.options.appConfig.acceptedCredentialProviders,
-      credentialStatusVerifier: this.options.credentialStatusVerifier,
+      credentialStatusVerifier: this.options.credentialStatusVerifier ?? this.defaultCredentialStatusVerifier(),
       expectedTargetCredentialType: input.expected.targetCredentialType,
     });
 
@@ -180,6 +194,55 @@ export class PresentationService {
     }
 
     return verified;
+  }
+
+  async verifyCredential(input: VerifyCredentialInput): Promise<VerifiedCredential> {
+    assertAppActive(this.options.appConfig);
+    return verifyCredentialJwt(
+      {
+        ...input,
+        acceptedProviderDids: input.acceptedProviderDids ?? this.options.appConfig.acceptedCredentialProviders,
+      },
+      this.options.credentialStatusVerifier ?? this.defaultCredentialStatusVerifier(),
+    );
+  }
+
+  async getStatusList(input: string | StatusListReference): Promise<StatusListCacheEntry> {
+    return this.requireStatusListClient().getStatusList(input);
+  }
+
+  buildStatusListUrl(statusId: string): string {
+    return this.requireStatusListClient().buildStatusListUrl(statusId);
+  }
+
+  async verifyCredentialStatus(input: { credentialJwt: string; statusList?: StatusListReference }): Promise<boolean> {
+    if (this.options.credentialStatusVerifier) {
+      return this.options.credentialStatusVerifier({
+        ...input,
+        credentialSubject: {},
+      });
+    }
+    return this.requireStatusListClient().verifyCredentialStatus(input);
+  }
+
+  private defaultCredentialStatusVerifier() {
+    if (!this.statusListClient) {
+      return undefined;
+    }
+    return async ({ credentialJwt, statusList }: { credentialJwt: string; statusList?: StatusListReference }) => {
+      const ok = await this.statusListClient!.verifyCredentialStatus({ credentialJwt, statusList });
+      if (!ok) {
+        throw sdkError('CREDENTIAL_REVOKED', 'Credential is revoked', { statusList });
+      }
+      return true;
+    };
+  }
+
+  private requireStatusListClient(): StatusListClient {
+    if (!this.statusListClient) {
+      throw sdkError('STATUS_LIST_URL_NOT_ALLOWED', 'statusListUrl is required for status-list operations');
+    }
+    return this.statusListClient;
   }
 }
 
