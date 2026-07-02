@@ -607,7 +607,7 @@ describe('Presentation Definition builder and canonicalization', () => {
 });
 
 describe('Presentation request creation', () => {
-  it('signs wallet-compatible request envelopes and rejects reserved subject overwrites', async () => {
+  it('signs wallet-compatible request envelopes with a minimal credential subject', async () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const sdk = new PresentationService({
       appConfig: appConfig({ appDid: requestIssuerDid.uri }),
@@ -622,23 +622,6 @@ describe('Presentation request creation', () => {
       attributes: { name: true },
     });
 
-    await expectRejectsSdkCode(
-      sdk.createRequest({
-        requestType,
-        targetCredentialType: TargetCredentialType.Human,
-        subject,
-        presentationDefinition: definition,
-        pdRequestId: 'session-1',
-        nonce: 'nonce-1',
-        expiresAt: new Date(Date.now() + 60_000),
-        pdFetchUrl: 'https://vote.example/pd?sessionId=session-1',
-        submissionUrl: 'https://vote.example/submit',
-        policy: policy(),
-        additionalCredentialSubjectData: { pdHash: 'override' },
-      }),
-      'PRESENTATION_REQUEST_CONFLICT',
-    );
-
     const envelope = await sdk.createRequest({
       requestType,
       targetCredentialType: TargetCredentialType.Human,
@@ -650,7 +633,6 @@ describe('Presentation request creation', () => {
       pdFetchUrl: 'https://vote.example/pd?sessionId=session-1',
       submissionUrl: 'https://vote.example/submit',
       policy: policy(),
-      additionalCredentialSubjectData: { resourceId: 'vote-1' },
     });
 
     expect(envelope).toMatchObject({
@@ -661,14 +643,15 @@ describe('Presentation request creation', () => {
       pdHash: computePresentationDefinitionHash(definition),
     });
     const parsed = VerifiableCredential.parseJwt({ vcJwt: envelope.jwtVc });
-    expect(parsed.vcDataModel.credentialSubject).toMatchObject({
+    expect(parsed.vcDataModel.credentialSubject).toEqual({
+      id: subject,
       presentationDefinition: encodePresentationDefinition(definition),
       pdHash: envelope.pdHash,
       pdRequestId: 'session-1',
       pdRequestType: requestType,
+      pdFetchUrl: 'https://vote.example/pd?sessionId=session-1',
       submissionUrl: 'https://vote.example/submit',
       nonce: 'nonce-1',
-      resourceId: 'vote-1',
     });
   });
 

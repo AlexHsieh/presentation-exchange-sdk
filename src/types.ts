@@ -193,8 +193,6 @@ export interface PresentationRequestCreateInput {
   pdFetchUrl: string;
   submissionUrl: string;
   policy: PresentationPolicy;
-  pdParams?: Record<string, unknown>;
-  additionalCredentialSubjectData?: Record<string, unknown>;
 }
 
 export interface PresentationRequestEnvelope {

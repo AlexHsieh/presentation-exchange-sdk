@@ -28,18 +28,6 @@ import type {
   VerifySubmissionInput,
 } from './types.js';
 
-const reservedRequestSubjectFields = new Set([
-  'tier',
-  'presentationDefinition',
-  'pdHash',
-  'pdRequestId',
-  'pdRequestType',
-  'pdParams',
-  'pdFetchUrl',
-  'submissionUrl',
-  'nonce',
-]);
-
 export class PresentationService {
   private readonly statusListClient?: StatusListClient;
 
@@ -93,8 +81,6 @@ export class PresentationService {
     assertTargetCredentialTypeAllowed(this.options.appConfig, input.requestType, input.targetCredentialType);
     assertAllowedUrlHost(input.pdFetchUrl, this.options.appConfig.allowedPdFetchDomains, 'PD_FETCH_DOMAIN_NOT_ALLOWED');
     assertAllowedUrlHost(input.submissionUrl, this.options.appConfig.allowedVcSubmissionDomains, 'VC_SUBMISSION_DOMAIN_NOT_ALLOWED');
-    assertAdditionalSubjectData(input.additionalCredentialSubjectData);
-
     validatePresentationDefinition(input.presentationDefinition, {
       mode: 'strict',
       appConfig: this.options.appConfig,
@@ -114,19 +100,13 @@ export class PresentationService {
       issuer: bearerDid.uri,
       subject: input.subject,
       data: {
-        tier: input.policy.tier,
         presentationDefinition: encodedDefinition,
         pdHash,
         pdRequestId: input.pdRequestId,
         pdRequestType: input.requestType,
-        pdParams: input.pdParams ?? {
-          tier: input.policy.tier,
-          personalDataSource: input.policy.personalDataSource,
-        },
         pdFetchUrl: input.pdFetchUrl,
         submissionUrl: input.submissionUrl,
         nonce: input.nonce,
-        ...(input.additionalCredentialSubjectData ?? {}),
       },
       issuanceDate: new Date().toISOString(),
       expirationDate: expiresAt,
@@ -243,16 +223,6 @@ export class PresentationService {
       throw sdkError('STATUS_LIST_URL_NOT_ALLOWED', 'statusListUrl is required for status-list operations');
     }
     return this.statusListClient;
-  }
-}
-
-function assertAdditionalSubjectData(value?: Record<string, unknown>): void {
-  if (!value) return;
-  const reserved = Object.keys(value).filter((key) => reservedRequestSubjectFields.has(key));
-  if (reserved.length > 0) {
-    throw sdkError('PRESENTATION_REQUEST_CONFLICT', 'additionalCredentialSubjectData overwrites reserved request fields', {
-      reserved,
-    });
   }
 }
 
