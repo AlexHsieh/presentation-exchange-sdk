@@ -1,5 +1,5 @@
 import { PresentationExchange, type PresentationDefinitionV2 } from '@web5/credentials';
-import { PresentationPath, TargetCredentialType } from './constants.js';
+import { PersonalDataSource, PresentationPath, TargetCredentialType } from './constants.js';
 import { normalizePresentationDefinition } from './canonicalization.js';
 import { sdkError } from './errors.js';
 import {
@@ -74,6 +74,7 @@ export function validatePresentationDefinition(
   }
 
   if (options.policy && options.targetCredentialType) {
+    validatePersonalDataSourceFilter(definition, options.policy);
     const attributes = attributesFromPaths(paths);
     assertAttributePolicy({
       attributes,
@@ -199,6 +200,11 @@ function buildFields(input: {
     });
   }
 
+  fields.push({
+    path: [PresentationPath.PersonalDataSource],
+    filter: { type: 'string', const: input.policy.personalDataSource },
+  });
+
   if (input.attributes.name) fields.push({ path: [PresentationPath.Name], filter: { type: 'string' } });
   if (input.attributes.profilePicture) fields.push({ path: [PresentationPath.ProfilePicture], filter: { type: 'string', format: 'uri' } });
   if (input.attributes.profileUrl) fields.push({ path: [PresentationPath.ProfileUrl], filter: { type: 'string', format: 'uri' } });
@@ -323,6 +329,26 @@ function validateNationalityFilters(
         value,
       });
     }
+  }
+}
+
+function validatePersonalDataSourceFilter(definition: PresentationDefinitionV2, policy: PresentationPolicy): void {
+  const values = extractFilterValues(definition, PresentationPath.PersonalDataSource);
+  if (values.length !== 1) {
+    throw sdkError('PRESENTATION_DEFINITION_INVALID', 'Presentation Definition must include exactly one personalDataSource filter', {
+      values,
+    });
+  }
+  if (!(Object.values(PersonalDataSource) as string[]).includes(values[0])) {
+    throw sdkError('PRESENTATION_DEFINITION_INVALID', 'personalDataSource filter is unsupported', {
+      value: values[0],
+    });
+  }
+  if (values[0] !== policy.personalDataSource) {
+    throw sdkError('PRESENTATION_DEFINITION_INVALID', 'personalDataSource filter does not match policy', {
+      expected: policy.personalDataSource,
+      actual: values[0],
+    });
   }
 }
 

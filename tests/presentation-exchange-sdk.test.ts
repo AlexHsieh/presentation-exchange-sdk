@@ -31,6 +31,7 @@ const allowedPaths = [
   PresentationPath.IssuanceDate,
   PresentationPath.SubjectId,
   PresentationPath.PdRequestType,
+  PresentationPath.PersonalDataSource,
   PresentationPath.Name,
   PresentationPath.ProfilePicture,
   PresentationPath.ProfileUrl,
@@ -313,6 +314,7 @@ describe('Presentation Definition builder and canonicalization', () => {
         PresentationPath.Type,
         PresentationPath.ExpirationDate,
         PresentationPath.IssuanceDate,
+        PresentationPath.PersonalDataSource,
         PresentationPath.Name,
         PresentationPath.ProfilePicture,
         PresentationPath.SocialMedia,
@@ -357,6 +359,7 @@ describe('Presentation Definition builder and canonicalization', () => {
         PresentationPath.IssuanceDate,
         PresentationPath.SubjectId,
         PresentationPath.PdRequestType,
+        PresentationPath.PersonalDataSource,
         PresentationPath.Name,
         PresentationPath.ProfilePicture,
         PresentationPath.ProfileUrl,
@@ -374,6 +377,10 @@ describe('Presentation Definition builder and canonicalization', () => {
         supportedSocialMedia: ['facebook', 'linemessage'],
       }),
     ).not.toThrow();
+    expect(filterFor(definition, PresentationPath.PersonalDataSource)).toEqual({
+      type: 'string',
+      const: PersonalDataSource.PlatformUserData,
+    });
   });
 
   it('defaults empty socialMedia and nationality attributes to supported enum filters', () => {
@@ -422,6 +429,55 @@ describe('Presentation Definition builder and canonicalization', () => {
         policy: policy(PolicyTier.Uniqueness),
       }),
     ).not.toThrow();
+  });
+
+  it('requires a policy-matching personalDataSource filter', () => {
+    const definition = service().buildPresentationDefinition({
+      id: 'pd-personal-data-source',
+      requestType,
+      targetCredentialType: TargetCredentialType.Human,
+      subject,
+      policy: policy(PolicyTier.Human, PersonalDataSource.OfficialDocument),
+      attributes: { name: true },
+    });
+
+    expect(filterFor(definition, PresentationPath.PersonalDataSource)).toEqual({
+      type: 'string',
+      const: PersonalDataSource.OfficialDocument,
+    });
+
+    const missing = JSON.parse(JSON.stringify(definition)) as PresentationDefinitionV2;
+    missing.input_descriptors[0].constraints.fields = missing.input_descriptors[0].constraints.fields?.filter(
+      (field) => !field.path.includes(PresentationPath.PersonalDataSource),
+    );
+    expectSdkCode(() =>
+      validatePresentationDefinition(missing, {
+        mode: 'strict',
+        appConfig: appConfig(),
+        requestType,
+        targetCredentialType: TargetCredentialType.Human,
+        expectedSubject: subject,
+        policy: policy(PolicyTier.Human, PersonalDataSource.OfficialDocument),
+      }),
+    'PRESENTATION_DEFINITION_INVALID');
+
+    const mismatched = JSON.parse(JSON.stringify(definition)) as PresentationDefinitionV2;
+    const sourceField = mismatched.input_descriptors[0].constraints.fields?.find((field) =>
+      field.path.includes(PresentationPath.PersonalDataSource),
+    );
+    if (sourceField) {
+      sourceField.filter = { type: 'string', const: PersonalDataSource.PlatformUserData };
+    }
+    expectSdkCode(() =>
+      validatePresentationDefinition(mismatched, {
+        mode: 'strict',
+        appConfig: appConfig(),
+        requestType,
+        targetCredentialType: TargetCredentialType.Human,
+        expectedSubject: subject,
+        policy: policy(PolicyTier.Human, PersonalDataSource.OfficialDocument),
+      }),
+    'PRESENTATION_DEFINITION_INVALID');
   });
 
   it('treats empty arrays as supported defaults for socialMedia and nationality', () => {

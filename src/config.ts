@@ -18,6 +18,7 @@ const requiredPathsByTarget: Record<TargetCredentialTypeValue, string[]> = {
     PresentationPath.IssuanceDate,
     PresentationPath.SubjectId,
     PresentationPath.PdRequestType,
+    PresentationPath.PersonalDataSource,
   ],
   [TargetCredentialType.Uniqueness]: [
     PresentationPath.Type,
@@ -25,6 +26,7 @@ const requiredPathsByTarget: Record<TargetCredentialTypeValue, string[]> = {
     PresentationPath.IssuanceDate,
     PresentationPath.SubjectId,
     PresentationPath.PdRequestType,
+    PresentationPath.PersonalDataSource,
   ],
 };
 

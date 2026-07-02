@@ -12,6 +12,7 @@ export type SemanticAttribute =
   | 'issuanceDate'
   | 'subjectId'
   | 'pdRequestType'
+  | 'personalDataSource'
   | 'name'
   | 'profilePicture'
   | 'profileUrl'
