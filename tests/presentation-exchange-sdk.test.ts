@@ -12,6 +12,7 @@ import {
   buildPresentationDefinitionTemplate,
   computePresentationDefinitionHash,
   encodePresentationDefinition,
+  expiresIn,
   isPersonalDataSourceValue,
   PERSONAL_DATA_SOURCE_VALUES,
   validatePresentationAppConfig,
@@ -120,6 +121,13 @@ async function signedVpFor(params: {
 }
 
 describe('Presentation Exchange SDK config and policy', () => {
+  it('calculates expiration dates from minute, hour, and day durations', () => {
+    expect(expiresIn({ minutes: 3 }, { now: '2026-07-02T00:00:00Z' }).toISOString()).toBe('2026-07-02T00:03:00.000Z');
+    expect(expiresIn({ hours: 2 }, { now: '2026-07-02T00:00:00Z' }).toISOString()).toBe('2026-07-02T02:00:00.000Z');
+    expect(expiresIn({ days: 5 }, { now: '2026-07-02T00:00:00Z' }).toISOString()).toBe('2026-07-07T00:00:00.000Z');
+    expectSdkCode(() => expiresIn({ minutes: 0 }), 'PRESENTATION_DEFINITION_INVALID');
+  });
+
   it('exports personal data source values and predicate', () => {
     expect(PERSONAL_DATA_SOURCE_VALUES).toEqual(['platformUserData', 'officialDocument', 'notProvided']);
     expect(isPersonalDataSourceValue(PersonalDataSource.PlatformUserData)).toBe(true);
@@ -348,7 +356,7 @@ describe('Presentation Definition builder and canonicalization', () => {
       .require('profilePicture')
       .require('profileUrl')
       .require('socialMedia', { oneOf: ['facebook', 'linemessage'] })
-      .expiresAfter('2026-07-01T00:00:00Z')
+      .expiresAfter(expiresIn({ days: 5 }))
       .build();
 
     const paths = definition.input_descriptors[0].constraints.fields?.flatMap((field) => field.path) ?? [];
@@ -546,6 +554,21 @@ describe('Presentation Definition builder and canonicalization', () => {
     );
   });
 
+  it('rejects expirationMinimum values beyond the maximum presentation definition window', () => {
+    expectSdkCode(
+      () =>
+        service().buildPresentationDefinition({
+          id: 'pd-long-expiration-minimum',
+          requestType,
+          targetCredentialType: TargetCredentialType.Human,
+          subject,
+          policy: policy(),
+          expirationMinimum: expiresIn({ days: 31 }),
+        }),
+      'PRESENTATION_DEFINITION_INVALID',
+    );
+  });
+
   it('computes deterministic hashes for equivalent object key orderings', () => {
     const definition = service().buildPresentationDefinition({
       id: 'pd-hash',
@@ -693,6 +716,39 @@ describe('Presentation request creation', () => {
     await expectRejectsSdkCode(
       active.createRequest({ ...input, submissionUrl: 'https://evil.example/submit' }),
       'VC_SUBMISSION_DOMAIN_NOT_ALLOWED',
+    );
+  });
+
+  it('rejects request envelope expirations outside the allowed window', async () => {
+    const requestIssuerDid = await generatedRequestIssuerDid();
+    const sdk = new PresentationService({
+      appConfig: appConfig({ appDid: requestIssuerDid.uri }),
+      requestIssuerDid,
+    });
+    const definition = sdk.buildPresentationDefinition({
+      id: 'pd-expiration-window',
+      requestType,
+      targetCredentialType: TargetCredentialType.Human,
+      subject,
+      policy: policy(),
+    });
+    const input = {
+      requestType,
+      targetCredentialType: TargetCredentialType.Human,
+      subject,
+      presentationDefinition: definition,
+      pdRequestId: 'session-1',
+      nonce: 'nonce-1',
+      expiresAt: expiresIn({ hours: 2 }),
+      pdFetchUrl: 'https://vote.example/pd',
+      submissionUrl: 'https://vote.example/submit',
+      policy: policy(),
+    };
+
+    await expectRejectsSdkCode(sdk.createRequest(input), 'PRESENTATION_REQUEST_EXPIRED');
+    await expectRejectsSdkCode(
+      sdk.createRequest({ ...input, expiresAt: new Date(Date.now() - 60_000) }),
+      'PRESENTATION_REQUEST_EXPIRED',
     );
   });
 });

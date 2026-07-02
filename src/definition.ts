@@ -2,6 +2,7 @@ import { PresentationExchange, type PresentationDefinitionV2 } from '@web5/crede
 import { PersonalDataSource, PresentationPath, TargetCredentialType } from './constants.js';
 import { normalizePresentationDefinition } from './canonicalization.js';
 import { sdkError } from './errors.js';
+import { assertFutureWithin, PRESENTATION_DEFINITION_MAX_EXPIRATION_MINIMUM_MS } from './expiration.js';
 import {
   assertAttributePolicy,
   assertPathKnownToSdk,
@@ -359,6 +360,13 @@ function validateExpirationMinimum(definition: PresentationDefinitionV2): void {
     if (formatMinimum !== undefined && (typeof formatMinimum !== 'string' || Number.isNaN(Date.parse(formatMinimum)))) {
       throw sdkError('PRESENTATION_DEFINITION_INVALID', 'expirationDate.formatMinimum must be a valid ISO date-time', {
         formatMinimum,
+      });
+    }
+    if (typeof formatMinimum === 'string') {
+      assertFutureWithin(formatMinimum, {
+        field: 'expirationDate.formatMinimum',
+        maxMs: PRESENTATION_DEFINITION_MAX_EXPIRATION_MINIMUM_MS,
+        code: 'PRESENTATION_DEFINITION_INVALID',
       });
     }
   }

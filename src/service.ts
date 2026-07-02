@@ -13,6 +13,7 @@ import {
 import { computePresentationDefinitionHash, encodePresentationDefinition } from './canonicalization.js';
 import { buildPresentationDefinition, validatePresentationDefinition } from './definition.js';
 import { sdkError } from './errors.js';
+import { assertFutureWithin, PRESENTATION_REQUEST_MAX_EXPIRES_IN_MS } from './expiration.js';
 import { normalizeSubmissionEnvelope, verifyAndNormalizeSubmission, verifyCredentialJwt } from './exchange.js';
 import { StatusListClient } from './status-list.js';
 import type {
@@ -92,7 +93,11 @@ export class PresentationService {
 
     const encodedDefinition = encodePresentationDefinition(input.presentationDefinition);
     const pdHash = computePresentationDefinitionHash(input.presentationDefinition);
-    const expiresAt = toIsoString(input.expiresAt, 'expiresAt');
+    const expiresAt = assertFutureWithin(input.expiresAt, {
+      field: 'expiresAt',
+      maxMs: PRESENTATION_REQUEST_MAX_EXPIRES_IN_MS,
+      code: 'PRESENTATION_REQUEST_EXPIRED',
+    }).toISOString();
     const bearerDid = await DidJwk.import({ portableDid: this.options.requestIssuerDid as never });
 
     const vc = await VerifiableCredential.create({
@@ -246,12 +251,4 @@ function assertNonceBinding(actual: string, expected: string): void {
   if (actual !== expected) {
     throw sdkError('PD_NONCE_MISMATCH', 'nonce does not match expected request state', { expected, actual });
   }
-}
-
-function toIsoString(value: Date | string, field: string): string {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    throw sdkError('PRESENTATION_DEFINITION_INVALID', `${field} must be a valid date-time`, { value });
-  }
-  return date.toISOString();
 }
