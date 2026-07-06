@@ -161,16 +161,6 @@ export interface BuildPresentationDefinitionInput {
   expirationMinimum?: Date | string;
 }
 
-export interface BuildPresentationDefinitionTemplateInput {
-  id: string;
-  name?: string;
-  purpose?: string;
-  targetCredentialType: TargetCredentialTypeValue;
-  policy: PresentationPolicy;
-  attributes?: AttributeInput;
-  expirationMinimum?: Date | string;
-}
-
 export interface ValidatePresentationDefinitionOptions {
   mode?: 'strict';
   appConfig?: PresentationAppConfig;

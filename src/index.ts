@@ -3,7 +3,6 @@ export { StatusListClient, getStatusList, verifyCredentialStatus } from './statu
 export { PresentationDefinitionBuilder } from './builder.js';
 export {
   buildPresentationDefinition,
-  buildPresentationDefinitionTemplate,
   extractFilterValues,
   extractRequiredPaths,
   validatePresentationDefinition,

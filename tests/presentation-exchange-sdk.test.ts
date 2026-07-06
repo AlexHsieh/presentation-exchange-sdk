@@ -9,7 +9,6 @@ import {
   PresentationService,
   StatusListClient,
   TargetCredentialType,
-  buildPresentationDefinitionTemplate,
   computePresentationDefinitionHash,
   encodePresentationDefinition,
   expiresIn,
@@ -302,45 +301,6 @@ describe('StatusListClient', () => {
 });
 
 describe('Presentation Definition builder and canonicalization', () => {
-  it('builds valid generic Presentation Definition templates without app-bound fields', () => {
-    const definition = buildPresentationDefinitionTemplate({
-      id: 'pd-template-uniqueness',
-      name: 'Uniqueness Credential',
-      purpose: 'Requires a uniqueness credential.',
-      targetCredentialType: TargetCredentialType.Uniqueness,
-      policy: policy(PolicyTier.Uniqueness),
-      attributes: {
-        name: true,
-        profilePicture: true,
-        socialMedia: true,
-      },
-    });
-
-    const paths = definition.input_descriptors[0].constraints.fields?.flatMap((field) => field.path) ?? [];
-    expect(paths).toEqual(
-      expect.arrayContaining([
-        PresentationPath.Type,
-        PresentationPath.ExpirationDate,
-        PresentationPath.IssuanceDate,
-        PresentationPath.PersonalDataSource,
-        PresentationPath.Name,
-        PresentationPath.ProfilePicture,
-        PresentationPath.SocialMedia,
-      ]),
-    );
-    expect(paths).not.toContain(PresentationPath.SubjectId);
-    expect(paths).not.toContain(PresentationPath.PdRequestType);
-    expect(() =>
-      validatePresentationDefinition(definition, {
-        mode: 'strict',
-        appConfig: appConfig(),
-        targetCredentialType: TargetCredentialType.Uniqueness,
-        policy: policy(PolicyTier.Uniqueness),
-        supportedSocialMedia: ['facebook', 'linemessage'],
-      }),
-    ).not.toThrow();
-  });
-
   it('builds a valid normalized Presentation Definition with automatic required fields', () => {
     const sdk = service();
     const definition = sdk

@@ -14,7 +14,6 @@ import {
 import type {
   AttributeInput,
   BuildPresentationDefinitionInput,
-  BuildPresentationDefinitionTemplateInput,
   PresentationPolicy,
   ValidatePresentationDefinitionOptions,
 } from './types.js';
@@ -114,27 +113,6 @@ export function buildPresentationDefinition(input: BuildPresentationDefinitionIn
     requestType: input.requestType,
     targetCredentialType: input.targetCredentialType,
     expectedSubject: input.subject,
-    policy: input.policy,
-  });
-}
-
-export function buildPresentationDefinitionTemplate(input: BuildPresentationDefinitionTemplateInput): PresentationDefinitionV2 {
-  const attributes = input.attributes ?? {};
-  const definition = buildDefinition({
-    id: input.id,
-    name: input.name,
-    purpose: input.purpose,
-    fields: buildFields({
-      attributes,
-      policy: input.policy,
-      targetCredentialType: input.targetCredentialType,
-      expirationMinimum: input.expirationMinimum,
-    }),
-  });
-
-  return validatePresentationDefinition(definition, {
-    mode: 'strict',
-    targetCredentialType: input.targetCredentialType,
     policy: input.policy,
   });
 }
