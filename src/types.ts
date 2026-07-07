@@ -24,10 +24,16 @@ export interface PresentationPolicy {
   personalDataSource: PersonalDataSourceValue;
 }
 
+export interface TargetCredentialPolicyConfig {
+  personalDataSource: PersonalDataSourceValue;
+  nationality?: string[];
+}
+
 export interface RequestCredentialTypeConfig {
   type: string;
   description?: string;
   targetCredentialType: TargetCredentialTypeValue[];
+  targetCredentialPolicies?: Partial<Record<TargetCredentialTypeValue, TargetCredentialPolicyConfig>>;
 }
 
 export interface PresentationAppConfig {
@@ -159,6 +165,10 @@ export interface BuildPresentationDefinitionInput {
   policy: PresentationPolicy;
   attributes?: AttributeInput;
   expirationMinimum?: Date | string;
+}
+
+export interface BuildPresentationDefinitionFromConfigInput extends Omit<BuildPresentationDefinitionInput, 'policy'> {
+  attributes?: Omit<AttributeInput, 'nationality'>;
 }
 
 export interface ValidatePresentationDefinitionOptions {

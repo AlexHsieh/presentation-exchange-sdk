@@ -49,6 +49,10 @@ function appConfig(overrides: Partial<PresentationAppConfig> = {}): Presentation
         type: requestType,
         description: 'Voter request',
         targetCredentialType: [TargetCredentialType.Human, TargetCredentialType.Uniqueness],
+        targetCredentialPolicies: {
+          [TargetCredentialType.Human]: { personalDataSource: PersonalDataSource.PlatformUserData },
+          [TargetCredentialType.Uniqueness]: { personalDataSource: PersonalDataSource.OfficialDocument, nationality: ['TWN'] },
+        },
       },
     ],
     allowedOrigins: ['https://vote.example'],
@@ -173,6 +177,72 @@ describe('Presentation Exchange SDK config and policy', () => {
           }),
         ),
       'APP_NOT_REGISTERED',
+    );
+  });
+
+  it('validates optional target credential policies', () => {
+    expect(() => validatePresentationAppConfig(appConfig())).not.toThrow();
+
+    expectSdkCode(
+      () =>
+        validatePresentationAppConfig(
+          appConfig({
+            requestCredentialTypes: [
+              {
+                type: requestType,
+                targetCredentialType: [TargetCredentialType.Human],
+                targetCredentialPolicies: {
+                  [TargetCredentialType.Human]: {
+                    personalDataSource: PersonalDataSource.NotProvided,
+                    nationality: ['TWN'],
+                  },
+                },
+              },
+            ],
+            allowedTargetCredentialTypes: [TargetCredentialType.Human],
+          }),
+        ),
+      'ATTRIBUTE_NOT_ALLOWED',
+    );
+
+    expectSdkCode(
+      () =>
+        validatePresentationAppConfig(
+          appConfig({
+            requestCredentialTypes: [
+              {
+                type: requestType,
+                targetCredentialType: [TargetCredentialType.Human],
+                targetCredentialPolicies: {
+                  [TargetCredentialType.Human]: {
+                    personalDataSource: PersonalDataSource.OfficialDocument,
+                  },
+                },
+              },
+            ],
+            allowedTargetCredentialTypes: [TargetCredentialType.Human],
+          }),
+        ),
+      'POLICY_VALUE_NOT_ALLOWED',
+    );
+
+    expectSdkCode(
+      () =>
+        validatePresentationAppConfig(
+          appConfig({
+            requestCredentialTypes: [
+              {
+                type: requestType,
+                targetCredentialType: [TargetCredentialType.Human],
+                targetCredentialPolicies: {
+                  [TargetCredentialType.Uniqueness]: { personalDataSource: PersonalDataSource.OfficialDocument },
+                },
+              },
+            ],
+            allowedTargetCredentialTypes: [TargetCredentialType.Human],
+          }),
+        ),
+      'TARGET_VC_TYPE_NOT_ALLOWED',
     );
   });
 
@@ -484,6 +554,71 @@ describe('Presentation Definition builder and canonicalization', () => {
     });
 
     expect(filterFor(nationalityDefinition, PresentationPath.Nationality)).toEqual({ type: 'string', enum: ['TWN'] });
+  });
+
+  it('builds Presentation Definitions from config target policies', () => {
+    const sdk = service();
+    const humanDefinition = sdk.buildPresentationDefinitionFromConfig({
+      id: 'pd-config-human',
+      requestType,
+      targetCredentialType: TargetCredentialType.Human,
+      subject,
+      attributes: { profilePicture: true },
+    });
+    expect(filterFor(humanDefinition, PresentationPath.PersonalDataSource)).toEqual({
+      type: 'string',
+      const: PersonalDataSource.PlatformUserData,
+    });
+
+    const uniquenessDefinition = sdk.buildPresentationDefinitionFromConfig({
+      id: 'pd-config-uniqueness',
+      requestType,
+      targetCredentialType: TargetCredentialType.Uniqueness,
+      subject,
+      attributes: { name: true },
+    });
+    expect(filterFor(uniquenessDefinition, PresentationPath.PersonalDataSource)).toEqual({
+      type: 'string',
+      const: PersonalDataSource.OfficialDocument,
+    });
+    expect(filterFor(uniquenessDefinition, PresentationPath.Nationality)).toEqual({ type: 'string', enum: ['TWN'] });
+  });
+
+  it('rejects missing config policies and caller-provided nationality in config helper', () => {
+    const sdk = new PresentationService({
+      appConfig: appConfig({
+        requestCredentialTypes: [
+          {
+            type: requestType,
+            targetCredentialType: [TargetCredentialType.Human],
+          },
+        ],
+        allowedTargetCredentialTypes: [TargetCredentialType.Human],
+      }),
+    });
+
+    expectSdkCode(
+      () =>
+        sdk.buildPresentationDefinitionFromConfig({
+          id: 'pd-missing-policy',
+          requestType,
+          targetCredentialType: TargetCredentialType.Human,
+          subject,
+        }),
+      'POLICY_VALUE_NOT_ALLOWED',
+    );
+
+    expectSdkCode(
+      () =>
+        service().buildPresentationDefinitionFromConfig({
+          id: 'pd-caller-nationality',
+          requestType,
+          targetCredentialType: TargetCredentialType.Uniqueness,
+          subject,
+          attributes: { nationality: ['USA'] } as never,
+        }),
+      'ATTRIBUTE_NOT_ALLOWED',
+    );
   });
 
   it('rejects unsupported socialMedia and nationality values during build', () => {

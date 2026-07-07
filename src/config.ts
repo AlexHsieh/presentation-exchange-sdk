@@ -1,4 +1,4 @@
-import { PresentationPath, TargetCredentialType } from './constants.js';
+import { PersonalDataSource, PresentationPath, TargetCredentialType } from './constants.js';
 import { sdkError, type PresentationSdkErrorCode } from './errors.js';
 import { normalizePresentationPath } from './policy.js';
 import type {
@@ -10,6 +10,8 @@ import type {
 
 const appStatuses = new Set(['draft', 'testing', 'active', 'suspended', 'revoked']);
 const targetCredentialTypes = new Set<string>(Object.values(TargetCredentialType));
+const personalDataSourceValues = new Set<string>(Object.values(PersonalDataSource));
+const supportedNationalityValues = new Set(['TWN', 'USA']);
 
 const requiredPathsByTarget: Record<TargetCredentialTypeValue, string[]> = {
   [TargetCredentialType.Human]: [
@@ -169,6 +171,67 @@ function validateRequestCredentialTypeEntry(entry: RequestCredentialTypeConfig):
         requestType: entry.type,
         targetCredentialType: target,
       });
+    }
+  }
+  validateTargetCredentialPolicies(entry);
+}
+
+function validateTargetCredentialPolicies(entry: RequestCredentialTypeConfig): void {
+  const policies = entry.targetCredentialPolicies;
+  if (policies === undefined) return;
+  if (!policies || typeof policies !== 'object' || Array.isArray(policies)) {
+    throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'targetCredentialPolicies must be an object', {
+      requestType: entry.type,
+    });
+  }
+
+  for (const [target, policy] of Object.entries(policies)) {
+    if (!targetCredentialTypes.has(target)) {
+      throw sdkError('TARGET_VC_TYPE_NOT_ALLOWED', 'Target credential policy target is unsupported', {
+        requestType: entry.type,
+        targetCredentialType: target,
+      });
+    }
+    if (!entry.targetCredentialType.includes(target as TargetCredentialTypeValue)) {
+      throw sdkError('TARGET_VC_TYPE_NOT_ALLOWED', 'Target credential policy target is not selected for request type', {
+        requestType: entry.type,
+        targetCredentialType: target,
+      });
+    }
+    if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Target credential policy is invalid', {
+        requestType: entry.type,
+        targetCredentialType: target,
+      });
+    }
+    if (!personalDataSourceValues.has(policy.personalDataSource)) {
+      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Target credential policy personalDataSource is unsupported', {
+        requestType: entry.type,
+        targetCredentialType: target,
+        personalDataSource: policy.personalDataSource,
+      });
+    }
+    if (target === TargetCredentialType.Human && policy.personalDataSource === PersonalDataSource.OfficialDocument) {
+      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Human target credential policy cannot use officialDocument', {
+        requestType: entry.type,
+        targetCredentialType: target,
+        personalDataSource: policy.personalDataSource,
+      });
+    }
+    if (policy.nationality !== undefined) {
+      if (target !== TargetCredentialType.Uniqueness) {
+        throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality policy requires UniquenessVerifiableCredential', {
+          requestType: entry.type,
+          targetCredentialType: target,
+        });
+      }
+      if (!Array.isArray(policy.nationality) || policy.nationality.some((value) => typeof value !== 'string' || !supportedNationalityValues.has(value))) {
+        throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality policy value is unsupported', {
+          requestType: entry.type,
+          targetCredentialType: target,
+          nationality: policy.nationality,
+        });
+      }
     }
   }
 }

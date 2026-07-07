@@ -1,7 +1,7 @@
 import { VerifiableCredential, type PresentationDefinitionV2 } from '@web5/credentials';
 import { DidJwk } from '@web5/dids';
 import { PresentationDefinitionBuilder } from './builder.js';
-import { RequestVcType } from './constants.js';
+import { PolicyTier, RequestVcType, TargetCredentialType } from './constants.js';
 import {
   assertAllowedUrlHost,
   assertAppActive,
@@ -18,6 +18,8 @@ import { normalizeSubmissionEnvelope, verifyAndNormalizeSubmission, verifyCreden
 import { StatusListClient } from './status-list.js';
 import type {
   BuildPresentationDefinitionInput,
+  BuildPresentationDefinitionFromConfigInput,
+  PresentationPolicy,
   PresentationRequestCreateInput,
   PresentationRequestEnvelope,
   PresentationServiceOptions,
@@ -70,6 +72,25 @@ export class PresentationService {
       targetCredentialType: input.targetCredentialType,
       expectedSubject: input.subject,
       policy: input.policy,
+    });
+  }
+
+  buildPresentationDefinitionFromConfig(input: BuildPresentationDefinitionFromConfigInput): PresentationDefinitionV2 {
+    if (input.attributes && 'nationality' in input.attributes) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality must be configured in app config for this helper', {
+        requestType: input.requestType,
+        targetCredentialType: input.targetCredentialType,
+      });
+    }
+    const { nationality, ...policy } = this.policyFromConfig(input.requestType, input.targetCredentialType);
+    const attributes = {
+      ...(input.attributes ?? {}),
+      ...(nationality ? { nationality } : {}),
+    };
+    return this.buildPresentationDefinition({
+      ...input,
+      policy,
+      attributes,
     });
   }
 
@@ -228,6 +249,32 @@ export class PresentationService {
       throw sdkError('STATUS_LIST_URL_NOT_ALLOWED', 'statusListUrl is required for status-list operations');
     }
     return this.statusListClient;
+  }
+
+  private policyFromConfig(
+    requestType: string,
+    targetCredentialType: BuildPresentationDefinitionInput['targetCredentialType'],
+  ): PresentationPolicy & { nationality?: string[] } {
+    assertTargetCredentialTypeAllowed(this.options.appConfig, requestType, targetCredentialType);
+    const entry = getRequestCredentialType(this.options.appConfig, requestType);
+    const configured = entry.targetCredentialPolicies?.[targetCredentialType];
+    if (!configured) {
+      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Target credential policy is not configured for request type', {
+        requestType,
+        targetCredentialType,
+      });
+    }
+    if (configured.nationality && targetCredentialType !== TargetCredentialType.Uniqueness) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality policy requires UniquenessVerifiableCredential', {
+        requestType,
+        targetCredentialType,
+      });
+    }
+    return {
+      tier: targetCredentialType === TargetCredentialType.Uniqueness ? PolicyTier.Uniqueness : PolicyTier.Human,
+      personalDataSource: configured.personalDataSource,
+      ...(configured.nationality && configured.nationality.length > 0 ? { nationality: configured.nationality } : {}),
+    };
   }
 }
 
