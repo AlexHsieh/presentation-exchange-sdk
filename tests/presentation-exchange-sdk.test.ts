@@ -558,6 +558,17 @@ describe('Presentation Definition builder and canonicalization', () => {
 
   it('builds Presentation Definitions from config target policies', () => {
     const sdk = service();
+    const defaultDefinition = sdk.buildPresentationDefinitionFromConfig({
+      id: 'pd-config-default',
+      requestType,
+      subject,
+    });
+    expect(filterFor(defaultDefinition, PresentationPath.PersonalDataSource)).toEqual({
+      type: 'string',
+      const: PersonalDataSource.PlatformUserData,
+    });
+    expect(filterFor(defaultDefinition, PresentationPath.Name)).toEqual({ type: 'string' });
+
     const humanDefinition = sdk.buildPresentationDefinitionFromConfig({
       id: 'pd-config-human',
       requestType,
@@ -607,6 +618,33 @@ describe('Presentation Definition builder and canonicalization', () => {
       subject,
     });
     expect(filterFor(socialDefinition, PresentationPath.SocialMedia)).toEqual({ type: 'string', enum: ['facebook'] });
+
+    const uniquenessOnlyDefinition = new PresentationService({
+      appConfig: appConfig({
+        requestCredentialTypes: [
+          {
+            type: requestType,
+            targetCredentialType: [TargetCredentialType.Uniqueness],
+            targetCredentialPolicies: {
+              [TargetCredentialType.Uniqueness]: {
+                personalDataSource: PersonalDataSource.OfficialDocument,
+                attributes: { nationality: ['TWN'] },
+              },
+            },
+          },
+        ],
+        allowedTargetCredentialTypes: [TargetCredentialType.Uniqueness],
+      }),
+    }).buildPresentationDefinitionFromConfig({
+      id: 'pd-config-uniqueness-default',
+      requestType,
+      subject,
+    });
+    expect(filterFor(uniquenessOnlyDefinition, PresentationPath.PersonalDataSource)).toEqual({
+      type: 'string',
+      const: PersonalDataSource.OfficialDocument,
+    });
+    expect(filterFor(uniquenessOnlyDefinition, PresentationPath.Nationality)).toEqual({ type: 'string', enum: ['TWN'] });
   });
 
   it('rejects missing config policies and caller-provided attributes in config helper', () => {

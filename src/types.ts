@@ -167,7 +167,9 @@ export interface BuildPresentationDefinitionInput {
   expirationMinimum?: Date | string;
 }
 
-export interface BuildPresentationDefinitionFromConfigInput extends Omit<BuildPresentationDefinitionInput, 'policy' | 'attributes'> {}
+export interface BuildPresentationDefinitionFromConfigInput extends Omit<BuildPresentationDefinitionInput, 'policy' | 'attributes' | 'targetCredentialType'> {
+  targetCredentialType?: TargetCredentialTypeValue;
+}
 
 export interface ValidatePresentationDefinitionOptions {
   mode?: 'strict';

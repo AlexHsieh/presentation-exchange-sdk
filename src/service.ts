@@ -77,15 +77,17 @@ export class PresentationService {
   }
 
   buildPresentationDefinitionFromConfig(input: BuildPresentationDefinitionFromConfigInput): PresentationDefinitionV2 {
+    const targetCredentialType = input.targetCredentialType ?? this.targetCredentialTypeFromConfig(input.requestType);
     if ('attributes' in input) {
       throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'attributes must be configured in app config for this helper', {
         requestType: input.requestType,
-        targetCredentialType: input.targetCredentialType,
+        targetCredentialType,
       });
     }
-    const { policy, attributes } = this.policyFromConfig(input.requestType, input.targetCredentialType);
+    const { policy, attributes } = this.policyFromConfig(input.requestType, targetCredentialType);
     return this.buildPresentationDefinition({
       ...input,
+      targetCredentialType,
       policy,
       attributes,
     });
@@ -246,6 +248,14 @@ export class PresentationService {
       throw sdkError('STATUS_LIST_URL_NOT_ALLOWED', 'statusListUrl is required for status-list operations');
     }
     return this.statusListClient;
+  }
+
+  private targetCredentialTypeFromConfig(requestType: string): BuildPresentationDefinitionInput['targetCredentialType'] {
+    const entry = getRequestCredentialType(this.options.appConfig, requestType);
+    if (entry.targetCredentialType.includes(TargetCredentialType.Human)) {
+      return TargetCredentialType.Human;
+    }
+    return entry.targetCredentialType[0];
   }
 
   private policyFromConfig(
