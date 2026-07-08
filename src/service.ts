@@ -17,6 +17,7 @@ import { assertFutureWithin, PRESENTATION_REQUEST_MAX_EXPIRES_IN_MS } from './ex
 import { normalizeSubmissionEnvelope, verifyAndNormalizeSubmission, verifyCredentialJwt } from './exchange.js';
 import { StatusListClient } from './status-list.js';
 import type {
+  AttributeInput,
   BuildPresentationDefinitionInput,
   BuildPresentationDefinitionFromConfigInput,
   PresentationPolicy,
@@ -76,17 +77,13 @@ export class PresentationService {
   }
 
   buildPresentationDefinitionFromConfig(input: BuildPresentationDefinitionFromConfigInput): PresentationDefinitionV2 {
-    if (input.attributes && 'nationality' in input.attributes) {
-      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality must be configured in app config for this helper', {
+    if ('attributes' in input) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'attributes must be configured in app config for this helper', {
         requestType: input.requestType,
         targetCredentialType: input.targetCredentialType,
       });
     }
-    const { nationality, ...policy } = this.policyFromConfig(input.requestType, input.targetCredentialType);
-    const attributes = {
-      ...(input.attributes ?? {}),
-      ...(nationality ? { nationality } : {}),
-    };
+    const { policy, attributes } = this.policyFromConfig(input.requestType, input.targetCredentialType);
     return this.buildPresentationDefinition({
       ...input,
       policy,
@@ -254,7 +251,7 @@ export class PresentationService {
   private policyFromConfig(
     requestType: string,
     targetCredentialType: BuildPresentationDefinitionInput['targetCredentialType'],
-  ): PresentationPolicy & { nationality?: string[] } {
+  ): { policy: PresentationPolicy; attributes: AttributeInput } {
     assertTargetCredentialTypeAllowed(this.options.appConfig, requestType, targetCredentialType);
     const entry = getRequestCredentialType(this.options.appConfig, requestType);
     const configured = entry.targetCredentialPolicies?.[targetCredentialType];
@@ -264,19 +261,26 @@ export class PresentationService {
         targetCredentialType,
       });
     }
-    if (configured.nationality && targetCredentialType !== TargetCredentialType.Uniqueness) {
-      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality policy requires UniquenessVerifiableCredential', {
-        requestType,
-        targetCredentialType,
-      });
-    }
-    return {
+    const policy = {
       tier: targetCredentialType === TargetCredentialType.Uniqueness ? PolicyTier.Uniqueness : PolicyTier.Human,
       personalDataSource: configured.personalDataSource,
-      ...(configured.nationality && configured.nationality.length > 0 ? { nationality: configured.nationality } : {}),
+    };
+    const attributes = {
+      ...(configured.personalDataSource === 'platformUserData' ? platformUserDataDefaultAttributes : {}),
+      ...(configured.attributes ?? {}),
+    };
+    return {
+      policy,
+      attributes,
     };
   }
 }
+
+const platformUserDataDefaultAttributes: AttributeInput = {
+  name: true,
+  profilePicture: true,
+  socialMedia: ['facebook', 'linemessage'],
+};
 
 function assertBinding(field: string, actual: string, expected: string): void {
   if (actual !== expected) {

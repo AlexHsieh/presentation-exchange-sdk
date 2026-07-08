@@ -26,7 +26,7 @@ export interface PresentationPolicy {
 
 export interface TargetCredentialPolicyConfig {
   personalDataSource: PersonalDataSourceValue;
-  nationality?: string[];
+  attributes?: AttributeInput;
 }
 
 export interface RequestCredentialTypeConfig {
@@ -167,9 +167,7 @@ export interface BuildPresentationDefinitionInput {
   expirationMinimum?: Date | string;
 }
 
-export interface BuildPresentationDefinitionFromConfigInput extends Omit<BuildPresentationDefinitionInput, 'policy'> {
-  attributes?: Omit<AttributeInput, 'nationality'>;
-}
+export interface BuildPresentationDefinitionFromConfigInput extends Omit<BuildPresentationDefinitionInput, 'policy' | 'attributes'> {}
 
 export interface ValidatePresentationDefinitionOptions {
   mode?: 'strict';

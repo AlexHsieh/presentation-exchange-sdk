@@ -12,6 +12,7 @@ const appStatuses = new Set(['draft', 'testing', 'active', 'suspended', 'revoked
 const targetCredentialTypes = new Set<string>(Object.values(TargetCredentialType));
 const personalDataSourceValues = new Set<string>(Object.values(PersonalDataSource));
 const supportedNationalityValues = new Set(['TWN', 'USA']);
+const supportedSocialMediaValues = new Set(['facebook', 'linemessage']);
 
 const requiredPathsByTarget: Record<TargetCredentialTypeValue, string[]> = {
   [TargetCredentialType.Human]: [
@@ -218,20 +219,69 @@ function validateTargetCredentialPolicies(entry: RequestCredentialTypeConfig): v
         personalDataSource: policy.personalDataSource,
       });
     }
-    if (policy.nationality !== undefined) {
-      if (target !== TargetCredentialType.Uniqueness) {
-        throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality policy requires UniquenessVerifiableCredential', {
-          requestType: entry.type,
-          targetCredentialType: target,
-        });
-      }
-      if (!Array.isArray(policy.nationality) || policy.nationality.some((value) => typeof value !== 'string' || !supportedNationalityValues.has(value))) {
-        throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality policy value is unsupported', {
-          requestType: entry.type,
-          targetCredentialType: target,
-          nationality: policy.nationality,
-        });
-      }
+    validateConfiguredAttributes(entry.type, target as TargetCredentialTypeValue, policy);
+  }
+}
+
+function validateConfiguredAttributes(
+  requestType: string,
+  target: TargetCredentialTypeValue,
+  policy: NonNullable<RequestCredentialTypeConfig['targetCredentialPolicies']>[TargetCredentialTypeValue],
+): void {
+  const attributes = policy?.attributes;
+  if (attributes === undefined) return;
+  if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) {
+    throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'Target credential policy attributes must be an object', {
+      requestType,
+      targetCredentialType: target,
+    });
+  }
+
+  if (attributes.name && policy.personalDataSource === PersonalDataSource.NotProvided) {
+    throw sdkError('ATTRIBUTE_SOURCE_NOT_ALLOWED', 'notProvided cannot request name', {
+      requestType,
+      targetCredentialType: target,
+      attribute: 'name',
+      source: policy.personalDataSource,
+    });
+  }
+
+  for (const attribute of ['profilePicture', 'profileUrl', 'socialMedia'] as const) {
+    if (attributes[attribute] && policy.personalDataSource !== PersonalDataSource.PlatformUserData) {
+      throw sdkError('ATTRIBUTE_SOURCE_NOT_ALLOWED', `${attribute} requires platformUserData`, {
+        requestType,
+        targetCredentialType: target,
+        attribute,
+        source: policy.personalDataSource,
+      });
+    }
+  }
+
+  if (attributes.socialMedia !== undefined) {
+    const values = normalizeStringList(attributes.socialMedia, (item) => item.toLowerCase());
+    if (values.some((value) => !supportedSocialMediaValues.has(value))) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'socialMedia policy value is unsupported', {
+        requestType,
+        targetCredentialType: target,
+        socialMedia: attributes.socialMedia,
+      });
+    }
+  }
+
+  if (attributes.nationality !== undefined) {
+    if (target !== TargetCredentialType.Uniqueness) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality policy requires UniquenessVerifiableCredential', {
+        requestType,
+        targetCredentialType: target,
+      });
+    }
+    const values = normalizeStringList(attributes.nationality, (item) => item.toUpperCase());
+    if (values.some((value) => !supportedNationalityValues.has(value))) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality policy value is unsupported', {
+        requestType,
+        targetCredentialType: target,
+        nationality: attributes.nationality,
+      });
     }
   }
 }
@@ -250,6 +300,12 @@ function assertRequiredPathsPresent(appConfig: PresentationAppConfig, target: Ta
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function normalizeStringList(value: unknown, mapper: (item: string) => string): string[] {
+  if (value === undefined || value === false || value === null || value === true) return [];
+  const raw = Array.isArray(value) ? value : [value];
+  return Array.from(new Set(raw.map((item) => mapper(String(item).trim())).filter((item) => item.length > 0)));
 }
 
 function assertValidStatusListBaseUrl(value: unknown): void {

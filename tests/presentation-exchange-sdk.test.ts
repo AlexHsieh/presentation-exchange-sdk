@@ -51,7 +51,7 @@ function appConfig(overrides: Partial<PresentationAppConfig> = {}): Presentation
         targetCredentialType: [TargetCredentialType.Human, TargetCredentialType.Uniqueness],
         targetCredentialPolicies: {
           [TargetCredentialType.Human]: { personalDataSource: PersonalDataSource.PlatformUserData },
-          [TargetCredentialType.Uniqueness]: { personalDataSource: PersonalDataSource.OfficialDocument, nationality: ['TWN'] },
+          [TargetCredentialType.Uniqueness]: { personalDataSource: PersonalDataSource.OfficialDocument, attributes: { nationality: ['TWN'] } },
         },
       },
     ],
@@ -194,7 +194,7 @@ describe('Presentation Exchange SDK config and policy', () => {
                 targetCredentialPolicies: {
                   [TargetCredentialType.Human]: {
                     personalDataSource: PersonalDataSource.NotProvided,
-                    nationality: ['TWN'],
+                    attributes: { nationality: ['TWN'] },
                   },
                 },
               },
@@ -563,28 +563,53 @@ describe('Presentation Definition builder and canonicalization', () => {
       requestType,
       targetCredentialType: TargetCredentialType.Human,
       subject,
-      attributes: { profilePicture: true },
     });
     expect(filterFor(humanDefinition, PresentationPath.PersonalDataSource)).toEqual({
       type: 'string',
       const: PersonalDataSource.PlatformUserData,
     });
+    expect(filterFor(humanDefinition, PresentationPath.Name)).toEqual({ type: 'string' });
+    expect(filterFor(humanDefinition, PresentationPath.ProfilePicture)).toEqual({ type: 'string', format: 'uri' });
+    expect(filterFor(humanDefinition, PresentationPath.SocialMedia)).toEqual({ type: 'string', enum: ['facebook', 'linemessage'] });
 
     const uniquenessDefinition = sdk.buildPresentationDefinitionFromConfig({
       id: 'pd-config-uniqueness',
       requestType,
       targetCredentialType: TargetCredentialType.Uniqueness,
       subject,
-      attributes: { name: true },
     });
     expect(filterFor(uniquenessDefinition, PresentationPath.PersonalDataSource)).toEqual({
       type: 'string',
       const: PersonalDataSource.OfficialDocument,
     });
     expect(filterFor(uniquenessDefinition, PresentationPath.Nationality)).toEqual({ type: 'string', enum: ['TWN'] });
+
+    const socialDefinition = new PresentationService({
+      appConfig: appConfig({
+        requestCredentialTypes: [
+          {
+            type: requestType,
+            targetCredentialType: [TargetCredentialType.Human],
+            targetCredentialPolicies: {
+              [TargetCredentialType.Human]: {
+                personalDataSource: PersonalDataSource.PlatformUserData,
+                attributes: { socialMedia: ['facebook'] },
+              },
+            },
+          },
+        ],
+        allowedTargetCredentialTypes: [TargetCredentialType.Human],
+      }),
+    }).buildPresentationDefinitionFromConfig({
+      id: 'pd-config-social',
+      requestType,
+      targetCredentialType: TargetCredentialType.Human,
+      subject,
+    });
+    expect(filterFor(socialDefinition, PresentationPath.SocialMedia)).toEqual({ type: 'string', enum: ['facebook'] });
   });
 
-  it('rejects missing config policies and caller-provided nationality in config helper', () => {
+  it('rejects missing config policies and caller-provided attributes in config helper', () => {
     const sdk = new PresentationService({
       appConfig: appConfig({
         requestCredentialTypes: [
@@ -611,11 +636,11 @@ describe('Presentation Definition builder and canonicalization', () => {
     expectSdkCode(
       () =>
         service().buildPresentationDefinitionFromConfig({
-          id: 'pd-caller-nationality',
+          id: 'pd-caller-attributes',
           requestType,
           targetCredentialType: TargetCredentialType.Uniqueness,
           subject,
-          attributes: { nationality: ['USA'] } as never,
+          attributes: { name: true } as never,
         }),
       'ATTRIBUTE_NOT_ALLOWED',
     );
