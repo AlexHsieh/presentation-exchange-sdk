@@ -1,6 +1,6 @@
 {
   "name": "@iamhuman.link/presentation-exchange-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Server-side Presentation Exchange SDK for registered app backends.",
   "type": "module",
   "main": "dist/index.js",
