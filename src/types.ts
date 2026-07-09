@@ -41,9 +41,9 @@ export interface PresentationAppConfig {
   tenantId: string;
   appDid: string;
   requestCredentialTypes: RequestCredentialTypeConfig[];
-  allowedOrigins: string[];
-  allowedPdFetchDomains: string[];
-  allowedVcSubmissionDomains: string[];
+  allowedOrigin: string;
+  allowedPdFetchDomain: string;
+  allowedVcSubmissionDomain: string;
   allowedTargetCredentialTypes: TargetCredentialTypeValue[];
   allowedPresentationPaths: string[];
   acceptedCredentialProviders: string[];

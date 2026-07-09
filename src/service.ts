@@ -102,8 +102,8 @@ export class PresentationService {
     }
 
     assertTargetCredentialTypeAllowed(this.options.appConfig, input.requestType, input.targetCredentialType);
-    assertAllowedUrlHost(input.pdFetchUrl, this.options.appConfig.allowedPdFetchDomains, 'PD_FETCH_DOMAIN_NOT_ALLOWED');
-    assertAllowedUrlHost(input.submissionUrl, this.options.appConfig.allowedVcSubmissionDomains, 'VC_SUBMISSION_DOMAIN_NOT_ALLOWED');
+    assertAllowedUrlHost(input.pdFetchUrl, this.options.appConfig.allowedPdFetchDomain, 'PD_FETCH_DOMAIN_NOT_ALLOWED');
+    assertAllowedUrlHost(input.submissionUrl, this.options.appConfig.allowedVcSubmissionDomain, 'VC_SUBMISSION_DOMAIN_NOT_ALLOWED');
     validatePresentationDefinition(input.presentationDefinition, {
       mode: 'strict',
       appConfig: this.options.appConfig,
@@ -189,7 +189,7 @@ export class PresentationService {
       input.expected.pdRequestType,
       input.expected.targetCredentialType,
     );
-    assertAllowedUrlHost(input.expected.submissionUrl, this.options.appConfig.allowedVcSubmissionDomains, 'VC_SUBMISSION_DOMAIN_NOT_ALLOWED');
+    assertAllowedUrlHost(input.expected.submissionUrl, this.options.appConfig.allowedVcSubmissionDomain, 'VC_SUBMISSION_DOMAIN_NOT_ALLOWED');
 
     const computedHash = computePresentationDefinitionHash(input.storedPresentationDefinition);
     if (computedHash !== input.expected.pdHash) {

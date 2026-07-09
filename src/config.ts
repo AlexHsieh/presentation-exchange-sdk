@@ -65,16 +65,14 @@ export function validatePresentationAppConfig(appConfig: PresentationAppConfig):
     }
   }
 
-  for (const field of [
-    'allowedOrigins',
-    'allowedPdFetchDomains',
-    'allowedVcSubmissionDomains',
-    'allowedTargetCredentialTypes',
-    'allowedPresentationPaths',
-    'acceptedCredentialProviders',
-  ] as const) {
+  for (const field of ['allowedTargetCredentialTypes', 'allowedPresentationPaths', 'acceptedCredentialProviders'] as const) {
     if (!Array.isArray(appConfig[field])) {
       throw sdkError('APP_NOT_REGISTERED', `App config ${field} must be an array`, { field });
+    }
+  }
+  for (const field of ['allowedOrigin', 'allowedPdFetchDomain', 'allowedVcSubmissionDomain'] as const) {
+    if (!isNonEmptyString(appConfig[field])) {
+      throw sdkError('APP_NOT_REGISTERED', `App config ${field} must be a non-empty string`, { field });
     }
   }
   if (appConfig.acceptedCredentialProviders.length === 0 || !appConfig.acceptedCredentialProviders.every(isNonEmptyString)) {
@@ -141,7 +139,7 @@ export function assertTargetCredentialTypeAllowed(
   }
 }
 
-export function assertAllowedUrlHost(url: string, allowedHosts: string[], errorCode: PresentationSdkErrorCode): void {
+export function assertAllowedUrlHost(url: string, allowedHost: string, errorCode: PresentationSdkErrorCode): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -151,9 +149,9 @@ export function assertAllowedUrlHost(url: string, allowedHosts: string[], errorC
 
   const host = parsed.host.toLowerCase();
   const hostname = parsed.hostname.toLowerCase();
-  const allowed = allowedHosts.map((item) => item.toLowerCase());
-  if (!allowed.includes(host) && !allowed.includes(hostname)) {
-    throw sdkError(errorCode, 'URL host is not allowlisted', { url, host, allowedHosts });
+  const allowed = allowedHost.toLowerCase();
+  if (allowed !== host && allowed !== hostname) {
+    throw sdkError(errorCode, 'URL host is not allowlisted', { url, host, allowedHost });
   }
 }
 
