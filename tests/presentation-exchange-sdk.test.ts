@@ -836,6 +836,99 @@ describe('Presentation request creation', () => {
     });
   });
 
+  it('creates config-driven request envelopes and returns the hashed Presentation Definition', async () => {
+    const requestIssuerDid = await generatedRequestIssuerDid();
+    const sdk = new PresentationService({
+      appConfig: appConfig({ appDid: requestIssuerDid.uri }),
+      requestIssuerDid,
+    });
+
+    const { envelope, presentationDefinition } = await sdk.createRequestFromConfig({
+      requestType,
+      subject,
+      pdRequestId: 'session-config-1',
+      nonce: 'nonce-config-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      pdFetchUrl: 'https://vote.example/pd?sessionId=session-config-1',
+      submissionUrl: 'https://vote.example/submit',
+    });
+
+    expect(envelope).toMatchObject({
+      pdRequestId: 'session-config-1',
+      pdRequestType: requestType,
+      appId: 'vote-app',
+      nonce: 'nonce-config-1',
+      pdHash: computePresentationDefinitionHash(presentationDefinition),
+    });
+    expect(presentationDefinition.id).toBe('session-config-1');
+    expect(filterFor(presentationDefinition, PresentationPath.Type)).toEqual({
+      type: 'string',
+      pattern: TargetCredentialType.Human,
+    });
+    expect(filterFor(presentationDefinition, PresentationPath.Name)).toEqual({ type: 'string' });
+
+    const parsed = VerifiableCredential.parseJwt({ vcJwt: envelope.jwtVc });
+    expect(parsed.vcDataModel.credentialSubject).toEqual({
+      id: subject,
+      presentationDefinition: encodePresentationDefinition(presentationDefinition),
+      pdHash: envelope.pdHash,
+      pdRequestId: 'session-config-1',
+      pdRequestType: requestType,
+      pdFetchUrl: 'https://vote.example/pd?sessionId=session-config-1',
+      submissionUrl: 'https://vote.example/submit',
+      nonce: 'nonce-config-1',
+    });
+  });
+
+  it('creates config-driven uniqueness requests with custom definition metadata', async () => {
+    const requestIssuerDid = await generatedRequestIssuerDid();
+    const sdk = new PresentationService({
+      appConfig: appConfig({ appDid: requestIssuerDid.uri }),
+      requestIssuerDid,
+    });
+    const expirationMinimum = new Date(Date.now() + 86_400_000);
+
+    const { envelope, presentationDefinition } = await sdk.createRequestFromConfig({
+      requestType,
+      targetCredentialType: TargetCredentialType.Uniqueness,
+      subject,
+      pdRequestId: 'session-config-uniqueness',
+      nonce: 'nonce-config-uniqueness',
+      expiresAt: new Date(Date.now() + 60_000),
+      pdFetchUrl: 'https://vote.example/pd?sessionId=session-config-uniqueness',
+      submissionUrl: 'https://vote.example/submit',
+      definition: {
+        id: 'pd-config-uniqueness-request',
+        name: 'Uniqueness request',
+        purpose: 'Confirm voter uniqueness',
+        expirationMinimum,
+      },
+    });
+
+    expect(envelope.pdHash).toBe(computePresentationDefinitionHash(presentationDefinition));
+    expect(presentationDefinition).toMatchObject({
+      id: 'pd-config-uniqueness-request',
+      name: 'Uniqueness request',
+    });
+    expect(presentationDefinition.input_descriptors[0]).toMatchObject({
+      purpose: 'Confirm voter uniqueness',
+    });
+    expect(filterFor(presentationDefinition, PresentationPath.Type)).toEqual({
+      type: 'string',
+      pattern: TargetCredentialType.Uniqueness,
+    });
+    expect(filterFor(presentationDefinition, PresentationPath.PersonalDataSource)).toEqual({
+      type: 'string',
+      const: PersonalDataSource.OfficialDocument,
+    });
+    expect(filterFor(presentationDefinition, PresentationPath.Nationality)).toEqual({ type: 'string', enum: ['TWN'] });
+    expect(filterFor(presentationDefinition, PresentationPath.ExpirationDate)).toEqual({
+      type: 'string',
+      format: 'date-time',
+      formatMinimum: expirationMinimum.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    });
+  });
+
   it('rejects inactive apps and disallowed request URLs', async () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const inactive = new PresentationService({
@@ -875,6 +968,18 @@ describe('Presentation request creation', () => {
       active.createRequest({ ...input, submissionUrl: 'https://evil.example/submit' }),
       'VC_SUBMISSION_DOMAIN_NOT_ALLOWED',
     );
+    await expectRejectsSdkCode(
+      active.createRequestFromConfig({
+        requestType,
+        subject,
+        pdRequestId: 'session-1',
+        nonce: 'nonce-1',
+        expiresAt: new Date(Date.now() + 60_000),
+        pdFetchUrl: 'https://evil.example/pd',
+        submissionUrl: 'https://vote.example/submit',
+      }),
+      'PD_FETCH_DOMAIN_NOT_ALLOWED',
+    );
   });
 
   it('rejects request envelope expirations outside the allowed window', async () => {
@@ -907,6 +1012,48 @@ describe('Presentation request creation', () => {
     await expectRejectsSdkCode(
       sdk.createRequest({ ...input, expiresAt: new Date(Date.now() - 60_000) }),
       'PRESENTATION_REQUEST_EXPIRED',
+    );
+    await expectRejectsSdkCode(
+      sdk.createRequestFromConfig({
+        requestType,
+        subject,
+        pdRequestId: 'session-1',
+        nonce: 'nonce-1',
+        expiresAt: expiresIn({ hours: 2 }),
+        pdFetchUrl: 'https://vote.example/pd',
+        submissionUrl: 'https://vote.example/submit',
+      }),
+      'PRESENTATION_REQUEST_EXPIRED',
+    );
+  });
+
+  it('rejects config-driven request creation when target policies are missing', async () => {
+    const requestIssuerDid = await generatedRequestIssuerDid();
+    const sdk = new PresentationService({
+      appConfig: appConfig({
+        appDid: requestIssuerDid.uri,
+        requestCredentialTypes: [
+          {
+            type: requestType,
+            targetCredentialType: [TargetCredentialType.Human],
+          },
+        ],
+        allowedTargetCredentialTypes: [TargetCredentialType.Human],
+      }),
+      requestIssuerDid,
+    });
+
+    await expectRejectsSdkCode(
+      sdk.createRequestFromConfig({
+        requestType,
+        subject,
+        pdRequestId: 'session-missing-policy',
+        nonce: 'nonce-missing-policy',
+        expiresAt: new Date(Date.now() + 60_000),
+        pdFetchUrl: 'https://vote.example/pd',
+        submissionUrl: 'https://vote.example/submit',
+      }),
+      'POLICY_VALUE_NOT_ALLOWED',
     );
   });
 });

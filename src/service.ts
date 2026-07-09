@@ -21,6 +21,8 @@ import type {
   BuildPresentationDefinitionInput,
   BuildPresentationDefinitionFromConfigInput,
   PresentationPolicy,
+  PresentationRequestCreateFromConfigInput,
+  PresentationRequestCreateFromConfigResult,
   PresentationRequestCreateInput,
   PresentationRequestEnvelope,
   PresentationServiceOptions,
@@ -147,6 +149,28 @@ export class PresentationService {
       appId: this.options.appConfig.appId,
       nonce: input.nonce,
     };
+  }
+
+  async createRequestFromConfig(input: PresentationRequestCreateFromConfigInput): Promise<PresentationRequestCreateFromConfigResult> {
+    const targetCredentialType = input.targetCredentialType ?? this.targetCredentialTypeFromConfig(input.requestType);
+    const { policy } = this.policyFromConfig(input.requestType, targetCredentialType);
+    const presentationDefinition = this.buildPresentationDefinitionFromConfig({
+      id: input.definition?.id ?? input.pdRequestId,
+      name: input.definition?.name,
+      purpose: input.definition?.purpose,
+      requestType: input.requestType,
+      targetCredentialType,
+      subject: input.subject,
+      expirationMinimum: input.definition?.expirationMinimum,
+    });
+    const envelope = await this.createRequest({
+      ...input,
+      targetCredentialType,
+      presentationDefinition,
+      policy,
+    });
+
+    return { envelope, presentationDefinition };
   }
 
   async verifySubmission(input: VerifySubmissionInput): Promise<VerifiedPresentation> {

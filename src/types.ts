@@ -195,6 +195,17 @@ export interface PresentationRequestCreateInput {
   policy: PresentationPolicy;
 }
 
+export interface PresentationRequestCreateFromConfigInput
+  extends Omit<PresentationRequestCreateInput, 'presentationDefinition' | 'policy' | 'targetCredentialType'> {
+  targetCredentialType?: TargetCredentialTypeValue;
+  definition?: {
+    id?: string;
+    name?: string;
+    purpose?: string;
+    expirationMinimum?: Date | string;
+  };
+}
+
 export interface PresentationRequestEnvelope {
   jwtVc: string;
   expiresAt: string;
@@ -203,6 +214,11 @@ export interface PresentationRequestEnvelope {
   pdHash: string;
   appId: string;
   nonce: string;
+}
+
+export interface PresentationRequestCreateFromConfigResult {
+  envelope: PresentationRequestEnvelope;
+  presentationDefinition: PresentationDefinitionV2;
 }
 
 export interface PresentationSubmissionEnvelope {
