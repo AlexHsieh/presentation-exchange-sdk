@@ -192,6 +192,7 @@ export async function verifyCredentialJwt(
 export function normalizeSubmissionEnvelope(submission: PresentationSubmissionEnvelope): PresentationSubmissionEnvelope {
   return {
     ...submission,
+    // Camel case is canonical for the outer submission envelope during the compatibility window.
     presentationSubmission: submission.presentationSubmission ?? submission.presentation_submission,
   };
 }

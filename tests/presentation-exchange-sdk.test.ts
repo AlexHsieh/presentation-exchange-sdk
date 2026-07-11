@@ -18,6 +18,7 @@ import {
   validatePresentationDefinition,
 } from '../src/index.js';
 import type { PresentationAppConfig, PresentationPolicy, RequestIssuerDid, VerifySubmissionInput } from '../src/index.js';
+import { normalizeSubmissionEnvelope } from '../src/exchange.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -124,6 +125,28 @@ async function signedVpFor(params: {
 }
 
 describe('Presentation Exchange SDK config and policy', () => {
+  it('accepts both outer submission spellings and prefers camel case', () => {
+    const base = {
+      vpJwt: 'vp-jwt',
+      pdRequestId: 'request-1',
+      pdRequestType: requestType,
+      pdHash: 'hash',
+      nonce: 'nonce',
+      appId: 'vote-app',
+    };
+
+    expect(normalizeSubmissionEnvelope({ ...base, presentation_submission: { id: 'snake' } }).presentationSubmission).toEqual({
+      id: 'snake',
+    });
+    expect(
+      normalizeSubmissionEnvelope({
+        ...base,
+        presentationSubmission: { id: 'camel' },
+        presentation_submission: { id: 'snake' },
+      }).presentationSubmission,
+    ).toEqual({ id: 'camel' });
+  });
+
   it('calculates expiration dates from minute, hour, and day durations', () => {
     expect(expiresIn({ minutes: 3 }, { now: '2026-07-02T00:00:00Z' }).toISOString()).toBe('2026-07-02T00:03:00.000Z');
     expect(expiresIn({ hours: 2 }, { now: '2026-07-02T00:00:00Z' }).toISOString()).toBe('2026-07-02T02:00:00.000Z');
