@@ -3,6 +3,7 @@ import { sdkError, type PresentationSdkErrorCode } from './errors.js';
 import { normalizePresentationPath } from './policy.js';
 import type {
   PresentationAppConfig,
+  PresentationScopeConfig,
   RequestCredentialTypeConfig,
   RequestIssuerDid,
   TargetCredentialTypeValue,
@@ -48,12 +49,22 @@ export function validatePresentationAppConfig(appConfig: PresentationAppConfig):
   if (!appStatuses.has(appConfig.status)) {
     throw sdkError('APP_NOT_REGISTERED', 'App config status is invalid', { status: appConfig.status });
   }
-  if (!Array.isArray(appConfig.requestCredentialTypes) || appConfig.requestCredentialTypes.length === 0) {
-    throw sdkError('REQUEST_TYPE_NOT_ALLOWED', 'At least one request credential type is required');
+  if (!Array.isArray(appConfig.scopes) || appConfig.scopes.length === 0) {
+    throw sdkError('REQUEST_TYPE_NOT_ALLOWED', 'At least one presentation scope is required');
   }
+  for (const scope of appConfig.scopes) validateScope(scope);
 
-  for (const entry of appConfig.requestCredentialTypes) {
+  const requestTypes = scopedRequestCredentialTypes(appConfig);
+
+  const requestTypeNames = new Set<string>();
+  for (const { scope, entry } of requestTypes) {
     validateRequestCredentialTypeEntry(entry);
+    if (requestTypeNames.has(entry.type)) {
+      throw sdkError('REQUEST_TYPE_NOT_ALLOWED', 'Request credential type is configured in more than one scope', {
+        requestType: entry.type,
+      });
+    }
+    requestTypeNames.add(entry.type);
     for (const target of entry.targetCredentialType) {
       if (!appConfig.allowedTargetCredentialTypes.includes(target)) {
         throw sdkError('TARGET_VC_TYPE_NOT_ALLOWED', 'Request type target is not included in allowedTargetCredentialTypes', {
@@ -108,14 +119,14 @@ export function assertAppActive(appConfig: PresentationAppConfig): void {
 }
 
 export function getRequestCredentialType(appConfig: PresentationAppConfig, requestType: string): RequestCredentialTypeConfig {
-  const entry = appConfig.requestCredentialTypes.find((item) => item.type === requestType);
-  if (!entry) {
+  const configured = scopedRequestCredentialTypes(appConfig).find(({ entry }) => entry.type === requestType);
+  if (!configured) {
     throw sdkError('REQUEST_TYPE_NOT_ALLOWED', `Request credential type is not registered: ${requestType}`, {
       requestType,
-      allowed: appConfig.requestCredentialTypes.map((item) => item.type),
+      allowed: scopedRequestCredentialTypes(appConfig).map(({ entry }) => entry.type),
     });
   }
-  return entry;
+  return configured.entry;
 }
 
 export function assertTargetCredentialTypeAllowed(
@@ -173,6 +184,33 @@ function validateRequestCredentialTypeEntry(entry: RequestCredentialTypeConfig):
     }
   }
   validateTargetCredentialPolicies(entry);
+}
+
+function validateScope(scope: PresentationScopeConfig): void {
+  if (!scope || typeof scope !== 'object') {
+    throw sdkError('REQUEST_TYPE_NOT_ALLOWED', 'Presentation scope is invalid', { scope });
+  }
+  for (const field of ['scopeId', 'title'] as const) {
+    if (!isNonEmptyString(scope[field])) {
+      throw sdkError('REQUEST_TYPE_NOT_ALLOWED', `Presentation scope is missing ${field}`, { field });
+    }
+  }
+  if (!Array.isArray(scope.requestCredentialTypes) || scope.requestCredentialTypes.length === 0) {
+    throw sdkError('REQUEST_TYPE_NOT_ALLOWED', 'Presentation scope must include at least one request credential type', {
+      scopeId: scope.scopeId,
+    });
+  }
+}
+
+function scopedRequestCredentialTypes(
+  appConfig: PresentationAppConfig,
+): Array<{ scope: PresentationScopeConfig; entry: RequestCredentialTypeConfig }> {
+  if (!Array.isArray(appConfig.scopes)) return [];
+  return appConfig.scopes.flatMap((scope) =>
+    Array.isArray(scope?.requestCredentialTypes)
+      ? scope.requestCredentialTypes.map((entry) => ({ scope, entry }))
+      : [],
+  );
 }
 
 function validateTargetCredentialPolicies(entry: RequestCredentialTypeConfig): void {

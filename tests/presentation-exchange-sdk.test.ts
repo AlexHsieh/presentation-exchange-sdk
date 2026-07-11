@@ -17,7 +17,14 @@ import {
   validatePresentationAppConfig,
   validatePresentationDefinition,
 } from '../src/index.js';
-import type { PresentationAppConfig, PresentationPolicy, RequestIssuerDid, VerifySubmissionInput } from '../src/index.js';
+import type {
+  PresentationAppConfig,
+  PresentationPolicy,
+  PresentationRequestCreateFromConfigInput,
+  RequestCredentialTypeConfig,
+  RequestIssuerDid,
+  VerifySubmissionInput,
+} from '../src/index.js';
 import { normalizeSubmissionEnvelope } from '../src/exchange.js';
 
 afterEach(() => {
@@ -40,20 +47,30 @@ const allowedPaths = [
   PresentationPath.Nationality,
 ];
 
-function appConfig(overrides: Partial<PresentationAppConfig> = {}): PresentationAppConfig {
+function appConfig(
+  overrides: Partial<PresentationAppConfig> & { requestCredentialTypes?: RequestCredentialTypeConfig[] } = {},
+): PresentationAppConfig {
+  const { requestCredentialTypes, ...scopedOverrides } = overrides;
+  const defaultRequestCredentialTypes: RequestCredentialTypeConfig[] = [
+    {
+      type: requestType,
+      description: 'Voter request',
+      targetCredentialType: [TargetCredentialType.Human, TargetCredentialType.Uniqueness],
+      targetCredentialPolicies: {
+        [TargetCredentialType.Human]: { personalDataSource: PersonalDataSource.PlatformUserData },
+        [TargetCredentialType.Uniqueness]: { personalDataSource: PersonalDataSource.OfficialDocument, attributes: { nationality: ['TWN'] } },
+      },
+    },
+  ];
   return {
     appId: 'vote-app',
     tenantId: 'tenant-test',
     appDid: 'did:jwk:test-request-issuer',
-    requestCredentialTypes: [
+    scopes: [
       {
-        type: requestType,
-        description: 'Voter request',
-        targetCredentialType: [TargetCredentialType.Human, TargetCredentialType.Uniqueness],
-        targetCredentialPolicies: {
-          [TargetCredentialType.Human]: { personalDataSource: PersonalDataSource.PlatformUserData },
-          [TargetCredentialType.Uniqueness]: { personalDataSource: PersonalDataSource.OfficialDocument, attributes: { nationality: ['TWN'] } },
-        },
+        scopeId: 'voting',
+        title: 'Voting',
+        requestCredentialTypes: requestCredentialTypes ?? defaultRequestCredentialTypes,
       },
     ],
     allowedOrigin: 'https://vote.example',
@@ -64,9 +81,27 @@ function appConfig(overrides: Partial<PresentationAppConfig> = {}): Presentation
     acceptedCredentialProviders: ['did:jwk:test-provider'],
     status: 'active',
     version: '2026-06-03.1',
-    ...overrides,
+    ...scopedOverrides,
   };
 }
+
+const configRequestInput: PresentationRequestCreateFromConfigInput = {
+  requestType,
+  subject,
+  pdRequestId: 'type-check',
+  nonce: 'type-check',
+  expiresAt: new Date(),
+  pdFetchUrl: 'https://vote.example/pd',
+  submissionUrl: 'https://vote.example/submit',
+  definition: {
+    id: 'type-check',
+    // @ts-expect-error Presentation Definition names come from the configured scope.
+    name: 'caller-controlled name',
+    // @ts-expect-error Presentation Definition purposes come from the configured request type.
+    purpose: 'caller-controlled purpose',
+  },
+};
+void configRequestInput;
 
 function service(config: PresentationAppConfig = appConfig()): PresentationService {
   return new PresentationService({ appConfig: config });
@@ -163,6 +198,9 @@ describe('Presentation Exchange SDK config and policy', () => {
   it('validates app config and rejects untrusted request issuer DID', async () => {
     expect(() => validatePresentationAppConfig(appConfig())).not.toThrow();
     expect(() => validatePresentationAppConfig(appConfig({ status: 'testing' }))).not.toThrow();
+    const configWithLegacyRequestTypes = { ...appConfig(), requestCredentialTypes: [] };
+    expect(() => validatePresentationAppConfig(configWithLegacyRequestTypes)).not.toThrow();
+    expect(service(configWithLegacyRequestTypes).getRequestCredentialTypes()).toEqual([requestType]);
     expectSdkCode(
       () =>
         validatePresentationAppConfig({
@@ -180,6 +218,35 @@ describe('Presentation Exchange SDK config and policy', () => {
           requestIssuerDid,
         }),
       'REQUEST_ISSUER_NOT_TRUSTED',
+    );
+  });
+
+  it('requires valid scopes and unique request types across them', () => {
+    expectSdkCode(
+      () => validatePresentationAppConfig(appConfig({ scopes: [] })),
+      'REQUEST_TYPE_NOT_ALLOWED',
+    );
+    expectSdkCode(
+      () =>
+        validatePresentationAppConfig(
+          appConfig({
+            scopes: [{ scopeId: 'voting', title: '', requestCredentialTypes: [] }],
+          }),
+        ),
+      'REQUEST_TYPE_NOT_ALLOWED',
+    );
+    expectSdkCode(
+      () =>
+        validatePresentationAppConfig(
+          appConfig({
+            scopes: [
+              { scopeId: 'one', title: 'One', requestCredentialTypes: [{ type: requestType, targetCredentialType: [TargetCredentialType.Human] }] },
+              { scopeId: 'two', title: 'Two', requestCredentialTypes: [{ type: requestType, targetCredentialType: [TargetCredentialType.Human] }] },
+            ],
+            allowedTargetCredentialTypes: [TargetCredentialType.Human],
+          }),
+        ),
+      'REQUEST_TYPE_NOT_ALLOWED',
     );
   });
 
@@ -884,6 +951,8 @@ describe('Presentation request creation', () => {
       pdHash: computePresentationDefinitionHash(presentationDefinition),
     });
     expect(presentationDefinition.id).toBe('session-config-1');
+    expect(presentationDefinition.name).toBe('Voting');
+    expect(presentationDefinition.input_descriptors[0].purpose).toBe('Voter request');
     expect(filterFor(presentationDefinition, PresentationPath.Type)).toEqual({
       type: 'string',
       pattern: TargetCredentialType.Human,
@@ -903,7 +972,7 @@ describe('Presentation request creation', () => {
     });
   });
 
-  it('creates config-driven uniqueness requests with custom definition metadata', async () => {
+  it('creates config-driven uniqueness requests with scope-derived definition metadata', async () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const sdk = new PresentationService({
       appConfig: appConfig({ appDid: requestIssuerDid.uri }),
@@ -922,8 +991,6 @@ describe('Presentation request creation', () => {
       submissionUrl: 'https://vote.example/submit',
       definition: {
         id: 'pd-config-uniqueness-request',
-        name: 'Uniqueness request',
-        purpose: 'Confirm voter uniqueness',
         expirationMinimum,
       },
     });
@@ -931,10 +998,10 @@ describe('Presentation request creation', () => {
     expect(envelope.pdHash).toBe(computePresentationDefinitionHash(presentationDefinition));
     expect(presentationDefinition).toMatchObject({
       id: 'pd-config-uniqueness-request',
-      name: 'Uniqueness request',
+      name: 'Voting',
     });
     expect(presentationDefinition.input_descriptors[0]).toMatchObject({
-      purpose: 'Confirm voter uniqueness',
+      purpose: 'Voter request',
     });
     expect(filterFor(presentationDefinition, PresentationPath.Type)).toEqual({
       type: 'string',

@@ -36,11 +36,18 @@ export interface RequestCredentialTypeConfig {
   targetCredentialPolicies?: Partial<Record<TargetCredentialTypeValue, TargetCredentialPolicyConfig>>;
 }
 
+export interface PresentationScopeConfig {
+  scopeId: string;
+  title: string;
+  iconUrl?: string;
+  requestCredentialTypes: RequestCredentialTypeConfig[];
+}
+
 export interface PresentationAppConfig {
   appId: string;
   tenantId: string;
   appDid: string;
-  requestCredentialTypes: RequestCredentialTypeConfig[];
+  scopes: PresentationScopeConfig[];
   allowedOrigin: string;
   allowedPdFetchDomain: string;
   allowedVcSubmissionDomain: string;
@@ -200,8 +207,6 @@ export interface PresentationRequestCreateFromConfigInput
   targetCredentialType?: TargetCredentialTypeValue;
   definition?: {
     id?: string;
-    name?: string;
-    purpose?: string;
     expirationMinimum?: Date | string;
   };
 }

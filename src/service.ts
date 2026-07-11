@@ -25,6 +25,7 @@ import type {
   PresentationRequestCreateFromConfigResult,
   PresentationRequestCreateInput,
   PresentationRequestEnvelope,
+  RequestCredentialTypeConfig,
   PresentationServiceOptions,
   StatusListCacheEntry,
   StatusListReference,
@@ -36,9 +37,15 @@ import type {
 
 export class PresentationService {
   private readonly statusListClient?: StatusListClient;
+  private readonly requestCredentialTypes: Map<string, { entry: RequestCredentialTypeConfig; scopeTitle: string }>;
 
   constructor(private readonly options: PresentationServiceOptions) {
     validatePresentationAppConfig(options.appConfig);
+    this.requestCredentialTypes = new Map(
+      options.appConfig.scopes.flatMap((scope) =>
+        scope.requestCredentialTypes.map((entry) => [entry.type, { entry, scopeTitle: scope.title }] as const),
+      ),
+    );
     assertRequestIssuerTrusted(options.appConfig, options.requestIssuerDid);
     if (options.appConfig.statusListUrl) {
       this.statusListClient = new StatusListClient({
@@ -54,7 +61,7 @@ export class PresentationService {
   }
 
   getRequestCredentialTypes(): string[] {
-    return this.options.appConfig.requestCredentialTypes.map((entry) => entry.type);
+    return [...this.requestCredentialTypes.keys()];
   }
 
   assertRequestCredentialType(type: string): void {
@@ -154,10 +161,11 @@ export class PresentationService {
   async createRequestFromConfig(input: PresentationRequestCreateFromConfigInput): Promise<PresentationRequestCreateFromConfigResult> {
     const targetCredentialType = input.targetCredentialType ?? this.targetCredentialTypeFromConfig(input.requestType);
     const { policy } = this.policyFromConfig(input.requestType, targetCredentialType);
+    const configuredRequestType = this.requestCredentialTypeFromConfig(input.requestType);
     const presentationDefinition = this.buildPresentationDefinitionFromConfig({
       id: input.definition?.id ?? input.pdRequestId,
-      name: input.definition?.name,
-      purpose: input.definition?.purpose,
+      name: configuredRequestType.scopeTitle,
+      purpose: configuredRequestType.entry.description,
       requestType: input.requestType,
       targetCredentialType,
       subject: input.subject,
@@ -275,7 +283,7 @@ export class PresentationService {
   }
 
   private targetCredentialTypeFromConfig(requestType: string): BuildPresentationDefinitionInput['targetCredentialType'] {
-    const entry = getRequestCredentialType(this.options.appConfig, requestType);
+    const { entry } = this.requestCredentialTypeFromConfig(requestType);
     if (entry.targetCredentialType.includes(TargetCredentialType.Human)) {
       return TargetCredentialType.Human;
     }
@@ -287,7 +295,7 @@ export class PresentationService {
     targetCredentialType: BuildPresentationDefinitionInput['targetCredentialType'],
   ): { policy: PresentationPolicy; attributes: AttributeInput } {
     assertTargetCredentialTypeAllowed(this.options.appConfig, requestType, targetCredentialType);
-    const entry = getRequestCredentialType(this.options.appConfig, requestType);
+    const { entry } = this.requestCredentialTypeFromConfig(requestType);
     const configured = entry.targetCredentialPolicies?.[targetCredentialType];
     if (!configured) {
       throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Target credential policy is not configured for request type', {
@@ -307,6 +315,13 @@ export class PresentationService {
       policy,
       attributes,
     };
+  }
+
+  private requestCredentialTypeFromConfig(requestType: string): { entry: RequestCredentialTypeConfig; scopeTitle: string } {
+    const configured = this.requestCredentialTypes.get(requestType);
+    if (configured) return configured;
+    getRequestCredentialType(this.options.appConfig, requestType);
+    throw new Error('Unreachable request credential type lookup');
   }
 }
 
