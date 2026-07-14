@@ -298,14 +298,6 @@ function validateTargetCredentialPolicies(entry: Extract<RequestCredentialTypeCo
     });
   }
 
-  for (const target of entry.targetCredentialType) {
-    if (!policies[target]) {
-      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Target credential policy is required for every selected target', {
-        requestType: entry.type,
-        targetCredentialType: target,
-      });
-    }
-  }
   for (const [target, policy] of Object.entries(policies)) {
     if (!targetCredentialTypes.has(target)) {
       throw sdkError('TARGET_VC_TYPE_NOT_ALLOWED', 'Target credential policy target is unsupported', {

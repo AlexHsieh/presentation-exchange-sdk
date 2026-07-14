@@ -99,7 +99,7 @@ function appConfig(
   };
 }
 
-function configDrivenAppConfig(): PresentationAppConfig {
+function configDrivenAppConfig(overrides: Partial<PresentationAppConfig> = {}): PresentationAppConfig {
   return appConfig({
     requestCredentialTypes: [{
       type: requestType,
@@ -111,6 +111,7 @@ function configDrivenAppConfig(): PresentationAppConfig {
         [TargetCredentialType.Uniqueness]: { personalDataSource: PersonalDataSource.OfficialDocument, attributes: { nationality: ['TWN'] } },
       },
     }],
+    ...overrides,
   });
 }
 
@@ -251,6 +252,7 @@ describe('Presentation Exchange SDK config and policy', () => {
   });
 
   it('requires valid scopes and unique request types across them', () => {
+    const entry = appConfig().scopes[0].requestCredentialTypes[0];
     expectSdkCode(
       () => validatePresentationAppConfig(appConfig({ scopes: [] })),
       'REQUEST_TYPE_NOT_ALLOWED',
@@ -269,10 +271,10 @@ describe('Presentation Exchange SDK config and policy', () => {
         validatePresentationAppConfig(
           appConfig({
             scopes: [
-              { scopeId: 'one', title: 'One', requestCredentialTypes: [{ type: requestType, targetCredentialType: [TargetCredentialType.Human] }] },
-              { scopeId: 'two', title: 'Two', requestCredentialTypes: [{ type: requestType, targetCredentialType: [TargetCredentialType.Human] }] },
+              { scopeId: 'one', title: 'One', requestCredentialTypes: [entry] },
+              { scopeId: 'two', title: 'Two', requestCredentialTypes: [entry] },
             ],
-            allowedTargetCredentialTypes: [TargetCredentialType.Human],
+            allowedTargetCredentialTypes: [TargetCredentialType.Human, TargetCredentialType.Uniqueness],
           }),
         ),
       'REQUEST_TYPE_NOT_ALLOWED',
@@ -354,6 +356,7 @@ describe('Presentation Exchange SDK config and policy', () => {
                 type: requestType,
                 targetCredentialType: [TargetCredentialType.Human],
                 targetCredentialPolicies: {
+                  [TargetCredentialType.Human]: { personalDataSource: PersonalDataSource.PlatformUserData },
                   [TargetCredentialType.Uniqueness]: { personalDataSource: PersonalDataSource.OfficialDocument },
                 },
               },
@@ -372,6 +375,12 @@ describe('Presentation Exchange SDK config and policy', () => {
           {
             type: requestType,
             targetCredentialType: [TargetCredentialType.Human],
+            presentationRequestMode: 'developerDefined',
+            targetCredentialCapabilities: {
+              [TargetCredentialType.Human]: {
+                allowedPersonalDataSources: [PersonalDataSource.PlatformUserData],
+              },
+            },
           },
         ],
         allowedTargetCredentialTypes: [TargetCredentialType.Human],
@@ -588,14 +597,34 @@ describe('Presentation Definition builder and canonicalization', () => {
     ).not.toThrow();
   });
 
+  it('permits developer-defined PDs to omit optional capability filters', () => {
+    const humanDefinition = service().buildPresentationDefinition({
+      id: 'pd-optional-human-filters',
+      requestType,
+      targetCredentialType: TargetCredentialType.Human,
+      subject,
+      policy: policy(),
+    });
+    expect(filterFor(humanDefinition, PresentationPath.SocialMedia)).toBeUndefined();
+
+    const uniquenessDefinition = service().buildPresentationDefinition({
+      id: 'pd-optional-uniqueness-filters',
+      requestType,
+      targetCredentialType: TargetCredentialType.Uniqueness,
+      subject,
+      policy: policy(PolicyTier.Uniqueness, PersonalDataSource.OfficialDocument),
+    });
+    expect(filterFor(uniquenessDefinition, PresentationPath.SocialMedia)).toBeUndefined();
+    expect(filterFor(uniquenessDefinition, PresentationPath.Nationality)).toBeUndefined();
+  });
+
   it('requires a policy-matching personalDataSource filter', () => {
     const definition = service().buildPresentationDefinition({
       id: 'pd-personal-data-source',
       requestType,
-      targetCredentialType: TargetCredentialType.Human,
+      targetCredentialType: TargetCredentialType.Uniqueness,
       subject,
-      policy: policy(PolicyTier.Human, PersonalDataSource.OfficialDocument),
-      attributes: { name: true },
+      policy: policy(PolicyTier.Uniqueness, PersonalDataSource.OfficialDocument),
     });
 
     expect(filterFor(definition, PresentationPath.PersonalDataSource)).toEqual({
@@ -612,9 +641,9 @@ describe('Presentation Definition builder and canonicalization', () => {
         mode: 'strict',
         appConfig: appConfig(),
         requestType,
-        targetCredentialType: TargetCredentialType.Human,
+        targetCredentialType: TargetCredentialType.Uniqueness,
         expectedSubject: subject,
-        policy: policy(PolicyTier.Human, PersonalDataSource.OfficialDocument),
+        policy: policy(PolicyTier.Uniqueness, PersonalDataSource.OfficialDocument),
       }),
     'PRESENTATION_DEFINITION_INVALID');
 
@@ -630,9 +659,9 @@ describe('Presentation Definition builder and canonicalization', () => {
         mode: 'strict',
         appConfig: appConfig(),
         requestType,
-        targetCredentialType: TargetCredentialType.Human,
+        targetCredentialType: TargetCredentialType.Uniqueness,
         expectedSubject: subject,
-        policy: policy(PolicyTier.Human, PersonalDataSource.OfficialDocument),
+        policy: policy(PolicyTier.Uniqueness, PersonalDataSource.OfficialDocument),
       }),
     'PRESENTATION_DEFINITION_INVALID');
   });
@@ -676,7 +705,7 @@ describe('Presentation Definition builder and canonicalization', () => {
   });
 
   it('builds Presentation Definitions from config target policies', () => {
-    const sdk = service();
+    const sdk = service(configDrivenAppConfig());
     const defaultDefinition = sdk.buildPresentationDefinitionFromConfig({
       id: 'pd-config-default',
       requestType,
@@ -792,7 +821,7 @@ describe('Presentation Definition builder and canonicalization', () => {
 
     expectSdkCode(
       () =>
-        service().buildPresentationDefinitionFromConfig({
+        service(configDrivenAppConfig()).buildPresentationDefinitionFromConfig({
           id: 'pd-caller-attributes',
           requestType,
           targetCredentialType: TargetCredentialType.Uniqueness,
@@ -1004,7 +1033,7 @@ describe('Presentation request creation', () => {
   it('creates config-driven uniqueness requests with scope-derived definition metadata', async () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const sdk = new PresentationService({
-      appConfig: appConfig({ appDid: requestIssuerDid.uri }),
+      appConfig: configDrivenAppConfig({ appDid: requestIssuerDid.uri }),
       requestIssuerDid,
     });
     const expirationMinimum = new Date(Date.now() + 86_400_000);
@@ -1058,6 +1087,10 @@ describe('Presentation request creation', () => {
       appConfig: appConfig({ appDid: requestIssuerDid.uri }),
       requestIssuerDid,
     });
+    const configDriven = new PresentationService({
+      appConfig: configDrivenAppConfig({ appDid: requestIssuerDid.uri }),
+      requestIssuerDid,
+    });
     const definition = active.buildPresentationDefinition({
       id: 'pd-url',
       requestType,
@@ -1088,7 +1121,7 @@ describe('Presentation request creation', () => {
       'VC_SUBMISSION_DOMAIN_NOT_ALLOWED',
     );
     await expectRejectsSdkCode(
-      active.createRequestFromConfig({
+      configDriven.createRequestFromConfig({
         requestType,
         subject,
         pdRequestId: 'session-1',
@@ -1105,6 +1138,10 @@ describe('Presentation request creation', () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const sdk = new PresentationService({
       appConfig: appConfig({ appDid: requestIssuerDid.uri }),
+      requestIssuerDid,
+    });
+    const configDriven = new PresentationService({
+      appConfig: configDrivenAppConfig({ appDid: requestIssuerDid.uri }),
       requestIssuerDid,
     });
     const definition = sdk.buildPresentationDefinition({
@@ -1133,7 +1170,7 @@ describe('Presentation request creation', () => {
       'PRESENTATION_REQUEST_EXPIRED',
     );
     await expectRejectsSdkCode(
-      sdk.createRequestFromConfig({
+      configDriven.createRequestFromConfig({
         requestType,
         subject,
         pdRequestId: 'session-1',

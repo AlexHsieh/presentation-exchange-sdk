@@ -158,6 +158,8 @@ function assertFilterValues(
   const requested = extractFilterValues(definition, path).map((value) => value.toUpperCase()).sort();
   const expected = normalizeStringList(configured, (value) => value.toUpperCase()).sort();
   if (requested.length === 0 && expected.length === 0) return;
+  // Developer-defined capabilities constrain a filter only when the PD requests it.
+  if (!exact && requested.length === 0) return;
   const matches = exact
     ? requested.length === expected.length && requested.every((value, index) => value === expected[index])
     : requested.length > 0 && requested.every((value) => expected.includes(value));
