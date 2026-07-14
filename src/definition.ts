@@ -1,5 +1,6 @@
 import { PresentationExchange, type PresentationDefinitionV2 } from '@web5/credentials';
 import { PersonalDataSource, PresentationPath, TargetCredentialType } from './constants.js';
+import { capabilitiesForTarget, configuredPolicyForTarget, getRequestCredentialType } from './config.js';
 import { normalizePresentationDefinition } from './canonicalization.js';
 import { sdkError } from './errors.js';
 import { assertFutureWithin, PRESENTATION_DEFINITION_MAX_EXPIRATION_MINIMUM_MS } from './expiration.js';
@@ -82,6 +83,14 @@ export function validatePresentationDefinition(
       targetCredentialType: options.targetCredentialType,
     });
     validateNationalityFilters(definition, options.policy, options.targetCredentialType);
+    if (options.appConfig && options.requestType) {
+      validateRegistryPolicy(definition, {
+        appConfig: options.appConfig,
+        requestType: options.requestType,
+        targetCredentialType: options.targetCredentialType,
+        policy: options.policy,
+      });
+    }
   }
 
   if (options.supportedSocialMedia) {
@@ -90,6 +99,73 @@ export function validatePresentationDefinition(
 
   validateExpirationMinimum(definition);
   return normalizePresentationDefinition(definition);
+}
+
+function validateRegistryPolicy(
+  definition: PresentationDefinitionV2,
+  options: Required<Pick<ValidatePresentationDefinitionOptions, 'appConfig' | 'requestType' | 'targetCredentialType' | 'policy'>>,
+): void {
+  const entry = getRequestCredentialType(options.appConfig, options.requestType);
+  const paths = extractRequiredPaths(definition);
+  const actual = attributesFromPaths(paths);
+  if (entry.presentationRequestMode === 'configDriven') {
+    const configured = configuredPolicyForTarget(entry, options.targetCredentialType);
+    if (configured.policy.personalDataSource !== options.policy.personalDataSource) {
+      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'personalDataSource does not match the configured request policy', {
+        requestType: options.requestType, expected: configured.policy.personalDataSource, actual: options.policy.personalDataSource,
+      });
+    }
+    assertAttributesMatch(definition, configured.attributes, actual, options.requestType, true);
+    return;
+  }
+
+  const capabilities = capabilitiesForTarget(entry, options.targetCredentialType);
+  if (!capabilities.allowedPersonalDataSources.includes(options.policy.personalDataSource)) {
+    throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'personalDataSource is not allowed for this developer-defined request type', {
+      requestType: options.requestType, targetCredentialType: options.targetCredentialType, source: options.policy.personalDataSource,
+    });
+  }
+  assertAttributesMatch(definition, capabilities.allowedAttributes ?? {}, actual, options.requestType, false);
+}
+
+function assertAttributesMatch(
+  definition: PresentationDefinitionV2,
+  allowed: AttributeInput,
+  actual: AttributeInput,
+  requestType: string,
+  exact: boolean,
+): void {
+  for (const attribute of ['name', 'profilePicture', 'profileUrl', 'socialMedia', 'nationality'] as const) {
+    const requested = Boolean(actual[attribute]);
+    const configured = Boolean(allowed[attribute]);
+    if ((exact && requested !== configured) || (!exact && requested && !configured)) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'Presentation Definition attributes do not match registered policy', {
+        requestType, attribute, requested, configured, exact,
+      });
+    }
+  }
+  assertFilterValues(definition, PresentationPath.SocialMedia, allowed.socialMedia, requestType, exact);
+  assertFilterValues(definition, PresentationPath.Nationality, allowed.nationality, requestType, exact);
+}
+
+function assertFilterValues(
+  definition: PresentationDefinitionV2,
+  path: string,
+  configured: AttributeInput['socialMedia'] | AttributeInput['nationality'],
+  requestType: string,
+  exact: boolean,
+): void {
+  const requested = extractFilterValues(definition, path).map((value) => value.toUpperCase()).sort();
+  const expected = normalizeStringList(configured, (value) => value.toUpperCase()).sort();
+  if (requested.length === 0 && expected.length === 0) return;
+  const matches = exact
+    ? requested.length === expected.length && requested.every((value, index) => value === expected[index])
+    : requested.length > 0 && requested.every((value) => expected.includes(value));
+  if (!matches) {
+    throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'Presentation Definition filter values are not allowed by registered policy', {
+      requestType, path, requested, expected, exact,
+    });
+  }
 }
 
 export function buildPresentationDefinition(input: BuildPresentationDefinitionInput): PresentationDefinitionV2 {

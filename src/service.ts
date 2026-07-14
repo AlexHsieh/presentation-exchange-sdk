@@ -5,8 +5,10 @@ import { PolicyTier, RequestVcType, TargetCredentialType } from './constants.js'
 import {
   assertAllowedUrlHost,
   assertAppActive,
+  assertPresentationRequestMode,
   assertRequestIssuerTrusted,
   assertTargetCredentialTypeAllowed,
+  configuredPolicyForTarget,
   getRequestCredentialType,
   validatePresentationAppConfig,
 } from './config.js';
@@ -74,6 +76,7 @@ export class PresentationService {
 
   buildPresentationDefinition(input: BuildPresentationDefinitionInput): PresentationDefinitionV2 {
     assertTargetCredentialTypeAllowed(this.options.appConfig, input.requestType, input.targetCredentialType);
+    assertPresentationRequestMode(this.options.appConfig, input.requestType, 'developerDefined');
     const definition = buildPresentationDefinition(input);
     return validatePresentationDefinition(definition, {
       mode: 'strict',
@@ -87,6 +90,7 @@ export class PresentationService {
 
   buildPresentationDefinitionFromConfig(input: BuildPresentationDefinitionFromConfigInput): PresentationDefinitionV2 {
     const targetCredentialType = input.targetCredentialType ?? this.targetCredentialTypeFromConfig(input.requestType);
+    assertPresentationRequestMode(this.options.appConfig, input.requestType, 'configDriven');
     if ('attributes' in input) {
       throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'attributes must be configured in app config for this helper', {
         requestType: input.requestType,
@@ -94,11 +98,19 @@ export class PresentationService {
       });
     }
     const { policy, attributes } = this.policyFromConfig(input.requestType, targetCredentialType);
-    return this.buildPresentationDefinition({
+    const definition = buildPresentationDefinition({
       ...input,
       targetCredentialType,
       policy,
       attributes,
+    });
+    return validatePresentationDefinition(definition, {
+      mode: 'strict',
+      appConfig: this.options.appConfig,
+      requestType: input.requestType,
+      targetCredentialType,
+      expectedSubject: input.subject,
+      policy,
     });
   }
 
@@ -109,6 +121,7 @@ export class PresentationService {
     }
 
     assertTargetCredentialTypeAllowed(this.options.appConfig, input.requestType, input.targetCredentialType);
+    assertPresentationRequestMode(this.options.appConfig, input.requestType, 'developerDefined');
     assertAllowedUrlHost(input.pdFetchUrl, this.options.appConfig.allowedPdFetchDomain, 'PD_FETCH_DOMAIN_NOT_ALLOWED');
     assertAllowedUrlHost(input.submissionUrl, this.options.appConfig.allowedVcSubmissionDomain, 'VC_SUBMISSION_DOMAIN_NOT_ALLOWED');
     validatePresentationDefinition(input.presentationDefinition, {
@@ -120,58 +133,24 @@ export class PresentationService {
       policy: input.policy,
     });
 
-    const encodedDefinition = encodePresentationDefinition(input.presentationDefinition);
-    const pdHash = computePresentationDefinitionHash(input.presentationDefinition);
-    const expiresAt = assertFutureWithin(input.expiresAt, {
-      field: 'expiresAt',
-      maxMs: PRESENTATION_REQUEST_MAX_EXPIRES_IN_MS,
-      code: 'PRESENTATION_REQUEST_EXPIRED',
-    }).toISOString();
-    const bearerDid = await DidJwk.import({ portableDid: this.options.requestIssuerDid as never });
-
-    const vc = await VerifiableCredential.create({
-      type: [RequestVcType.PresentationDefinitionTargetRequest, input.requestType],
-      issuer: bearerDid.uri,
-      subject: input.subject,
-      data: {
-        presentationDefinition: encodedDefinition,
-        pdHash,
-        pdRequestId: input.pdRequestId,
-        pdRequestType: input.requestType,
-        pdFetchUrl: input.pdFetchUrl,
-        submissionUrl: input.submissionUrl,
-        nonce: input.nonce,
-      },
-      issuanceDate: new Date().toISOString(),
-      expirationDate: expiresAt,
-    });
-    const jwtVc = await vc.sign({ did: bearerDid });
-
-    return {
-      jwtVc,
-      expiresAt,
-      pdRequestId: input.pdRequestId,
-      pdRequestType: input.requestType,
-      pdHash,
-      appId: this.options.appConfig.appId,
-      nonce: input.nonce,
-    };
+    return this.signRequest(input);
   }
 
   async createRequestFromConfig(input: PresentationRequestCreateFromConfigInput): Promise<PresentationRequestCreateFromConfigResult> {
     const targetCredentialType = input.targetCredentialType ?? this.targetCredentialTypeFromConfig(input.requestType);
+    assertPresentationRequestMode(this.options.appConfig, input.requestType, 'configDriven');
     const { policy } = this.policyFromConfig(input.requestType, targetCredentialType);
     const configuredRequestType = this.requestCredentialTypeFromConfig(input.requestType);
     const presentationDefinition = this.buildPresentationDefinitionFromConfig({
       id: input.definition?.id ?? input.pdRequestId,
-      name: configuredRequestType.scopeTitle,
-      purpose: configuredRequestType.entry.description,
+      name: input.definition?.name ?? configuredRequestType.scopeTitle,
+      purpose: input.definition?.purpose ?? configuredRequestType.entry.description,
       requestType: input.requestType,
       targetCredentialType,
       subject: input.subject,
       expirationMinimum: input.definition?.expirationMinimum,
     });
-    const envelope = await this.createRequest({
+    const envelope = await this.createConfigDrivenRequest({
       ...input,
       targetCredentialType,
       presentationDefinition,
@@ -296,25 +275,41 @@ export class PresentationService {
   ): { policy: PresentationPolicy; attributes: AttributeInput } {
     assertTargetCredentialTypeAllowed(this.options.appConfig, requestType, targetCredentialType);
     const { entry } = this.requestCredentialTypeFromConfig(requestType);
-    const configured = entry.targetCredentialPolicies?.[targetCredentialType];
-    if (!configured) {
-      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Target credential policy is not configured for request type', {
-        requestType,
-        targetCredentialType,
-      });
+    return configuredPolicyForTarget(entry, targetCredentialType);
+  }
+
+  private async createConfigDrivenRequest(input: PresentationRequestCreateInput): Promise<PresentationRequestEnvelope> {
+    assertAppActive(this.options.appConfig);
+    if (!this.options.requestIssuerDid) {
+      throw sdkError('REQUEST_ISSUER_NOT_TRUSTED', 'requestIssuerDid is required to create request VCs');
     }
-    const policy = {
-      tier: targetCredentialType === TargetCredentialType.Uniqueness ? PolicyTier.Uniqueness : PolicyTier.Human,
-      personalDataSource: configured.personalDataSource,
-    };
-    const attributes = {
-      ...(configured.personalDataSource === 'platformUserData' ? platformUserDataDefaultAttributes : {}),
-      ...(configured.attributes ?? {}),
-    };
-    return {
-      policy,
-      attributes,
-    };
+    assertTargetCredentialTypeAllowed(this.options.appConfig, input.requestType, input.targetCredentialType);
+    assertPresentationRequestMode(this.options.appConfig, input.requestType, 'configDriven');
+    assertAllowedUrlHost(input.pdFetchUrl, this.options.appConfig.allowedPdFetchDomain, 'PD_FETCH_DOMAIN_NOT_ALLOWED');
+    assertAllowedUrlHost(input.submissionUrl, this.options.appConfig.allowedVcSubmissionDomain, 'VC_SUBMISSION_DOMAIN_NOT_ALLOWED');
+    validatePresentationDefinition(input.presentationDefinition, {
+      mode: 'strict', appConfig: this.options.appConfig, requestType: input.requestType,
+      targetCredentialType: input.targetCredentialType, expectedSubject: input.subject, policy: input.policy,
+    });
+    return this.signRequest(input);
+  }
+
+  private async signRequest(input: PresentationRequestCreateInput): Promise<PresentationRequestEnvelope> {
+    const encodedDefinition = encodePresentationDefinition(input.presentationDefinition);
+    const pdHash = computePresentationDefinitionHash(input.presentationDefinition);
+    const expiresAt = assertFutureWithin(input.expiresAt, {
+      field: 'expiresAt', maxMs: PRESENTATION_REQUEST_MAX_EXPIRES_IN_MS, code: 'PRESENTATION_REQUEST_EXPIRED',
+    }).toISOString();
+    const bearerDid = await DidJwk.import({ portableDid: this.options.requestIssuerDid as never });
+    const vc = await VerifiableCredential.create({
+      type: [RequestVcType.PresentationDefinitionTargetRequest, input.requestType], issuer: bearerDid.uri, subject: input.subject,
+      data: { presentationDefinition: encodedDefinition, pdHash, pdRequestId: input.pdRequestId, pdRequestType: input.requestType,
+        pdFetchUrl: input.pdFetchUrl, submissionUrl: input.submissionUrl, nonce: input.nonce },
+      issuanceDate: new Date().toISOString(), expirationDate: expiresAt,
+    });
+    const jwtVc = await vc.sign({ did: bearerDid });
+    return { jwtVc, expiresAt, pdRequestId: input.pdRequestId, pdRequestType: input.requestType, pdHash,
+      appId: this.options.appConfig.appId, nonce: input.nonce };
   }
 
   private requestCredentialTypeFromConfig(requestType: string): { entry: RequestCredentialTypeConfig; scopeTitle: string } {
@@ -324,12 +319,6 @@ export class PresentationService {
     throw new Error('Unreachable request credential type lookup');
   }
 }
-
-const platformUserDataDefaultAttributes: AttributeInput = {
-  name: true,
-  profilePicture: true,
-  socialMedia: ['facebook', 'linemessage'],
-};
 
 function assertBinding(field: string, actual: string, expected: string): void {
   if (actual !== expected) {

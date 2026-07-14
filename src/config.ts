@@ -2,10 +2,14 @@ import { PersonalDataSource, PresentationPath, TargetCredentialType } from './co
 import { sdkError, type PresentationSdkErrorCode } from './errors.js';
 import { normalizePresentationPath } from './policy.js';
 import type {
+  AttributeInput,
   PresentationAppConfig,
+  PresentationPolicy,
   PresentationScopeConfig,
   RequestCredentialTypeConfig,
   RequestIssuerDid,
+  TargetCredentialCapabilityConfig,
+  TargetCredentialPolicyConfig,
   TargetCredentialTypeValue,
 } from './types.js';
 
@@ -150,6 +154,68 @@ export function assertTargetCredentialTypeAllowed(
   }
 }
 
+export function assertPresentationRequestMode(
+  appConfig: PresentationAppConfig,
+  requestType: string,
+  expected: 'configDriven' | 'developerDefined',
+): RequestCredentialTypeConfig {
+  const entry = getRequestCredentialType(appConfig, requestType);
+  if (entry.presentationRequestMode !== expected) {
+    throw sdkError('PRESENTATION_REQUEST_MODE_NOT_ALLOWED', `Request type must use ${entry.presentationRequestMode} helpers`, {
+      requestType,
+      expected: entry.presentationRequestMode,
+      actual: expected,
+    });
+  }
+  return entry;
+}
+
+export function configuredPolicyForTarget(
+  entry: RequestCredentialTypeConfig,
+  target: TargetCredentialTypeValue,
+): { policy: PresentationPolicy; attributes: AttributeInput } {
+  if (entry.presentationRequestMode !== 'configDriven') {
+    throw sdkError('PRESENTATION_REQUEST_MODE_NOT_ALLOWED', 'Developer-defined request types do not have a fixed policy', {
+      requestType: entry.type,
+      targetCredentialType: target,
+    });
+  }
+  const configured = entry.targetCredentialPolicies[target];
+  if (!configured) {
+    throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Target credential policy is not configured for request type', {
+      requestType: entry.type,
+      targetCredentialType: target,
+    });
+  }
+  return {
+    policy: {
+      tier: target === TargetCredentialType.Uniqueness ? 'uniqueness' : 'human',
+      personalDataSource: configured.personalDataSource,
+    },
+    attributes: configuredAttributes(configured),
+  };
+}
+
+export function capabilitiesForTarget(
+  entry: RequestCredentialTypeConfig,
+  target: TargetCredentialTypeValue,
+): TargetCredentialCapabilityConfig {
+  if (entry.presentationRequestMode !== 'developerDefined') {
+    throw sdkError('PRESENTATION_REQUEST_MODE_NOT_ALLOWED', 'Config-driven request types do not have developer capabilities', {
+      requestType: entry.type,
+      targetCredentialType: target,
+    });
+  }
+  const capabilities = entry.targetCredentialCapabilities[target];
+  if (!capabilities) {
+    throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Target credential capabilities are not configured for request type', {
+      requestType: entry.type,
+      targetCredentialType: target,
+    });
+  }
+  return capabilities;
+}
+
 export function assertAllowedUrlHost(url: string, allowedHost: string, errorCode: PresentationSdkErrorCode): void {
   let parsed: URL;
   try {
@@ -183,7 +249,17 @@ function validateRequestCredentialTypeEntry(entry: RequestCredentialTypeConfig):
       });
     }
   }
-  validateTargetCredentialPolicies(entry);
+  if (entry.presentationRequestMode === 'configDriven') {
+    validateTargetCredentialPolicies(entry);
+    return;
+  }
+  if (entry.presentationRequestMode === 'developerDefined') {
+    validateTargetCredentialCapabilities(entry);
+    return;
+  }
+  throw sdkError('PRESENTATION_REQUEST_MODE_NOT_ALLOWED', 'Request credential type presentationRequestMode is required', {
+    requestType: 'unknown',
+  });
 }
 
 function validateScope(scope: PresentationScopeConfig): void {
@@ -213,7 +289,7 @@ function scopedRequestCredentialTypes(
   );
 }
 
-function validateTargetCredentialPolicies(entry: RequestCredentialTypeConfig): void {
+function validateTargetCredentialPolicies(entry: Extract<RequestCredentialTypeConfig, { presentationRequestMode: 'configDriven' }>): void {
   const policies = entry.targetCredentialPolicies;
   if (policies === undefined) return;
   if (!policies || typeof policies !== 'object' || Array.isArray(policies)) {
@@ -222,6 +298,14 @@ function validateTargetCredentialPolicies(entry: RequestCredentialTypeConfig): v
     });
   }
 
+  for (const target of entry.targetCredentialType) {
+    if (!policies[target]) {
+      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Target credential policy is required for every selected target', {
+        requestType: entry.type,
+        targetCredentialType: target,
+      });
+    }
+  }
   for (const [target, policy] of Object.entries(policies)) {
     if (!targetCredentialTypes.has(target)) {
       throw sdkError('TARGET_VC_TYPE_NOT_ALLOWED', 'Target credential policy target is unsupported', {
@@ -262,7 +346,7 @@ function validateTargetCredentialPolicies(entry: RequestCredentialTypeConfig): v
 function validateConfiguredAttributes(
   requestType: string,
   target: TargetCredentialTypeValue,
-  policy: NonNullable<RequestCredentialTypeConfig['targetCredentialPolicies']>[TargetCredentialTypeValue],
+  policy: TargetCredentialPolicyConfig | undefined,
 ): void {
   const attributes = policy?.attributes;
   if (attributes === undefined) return;
@@ -320,6 +404,84 @@ function validateConfiguredAttributes(
       });
     }
   }
+}
+
+function validateTargetCredentialCapabilities(entry: Extract<RequestCredentialTypeConfig, { presentationRequestMode: 'developerDefined' }>): void {
+  const capabilities = entry.targetCredentialCapabilities;
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
+    throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'targetCredentialCapabilities must be an object', { requestType: entry.type });
+  }
+  for (const target of entry.targetCredentialType) {
+    const capability = capabilities[target];
+    if (!capability) {
+      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Target credential capabilities are required for every selected target', {
+        requestType: entry.type,
+        targetCredentialType: target,
+      });
+    }
+    const sources = capability.allowedPersonalDataSources;
+    if (!Array.isArray(sources) || sources.length === 0 || sources.some((source) => !personalDataSourceValues.has(source))) {
+      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'allowedPersonalDataSources must contain supported sources', {
+        requestType: entry.type,
+        targetCredentialType: target,
+      });
+    }
+    if (target === TargetCredentialType.Human && sources.includes(PersonalDataSource.OfficialDocument)) {
+      throw sdkError('POLICY_VALUE_NOT_ALLOWED', 'Human target capabilities cannot include officialDocument', {
+        requestType: entry.type,
+        targetCredentialType: target,
+      });
+    }
+    const attributes = capability.allowedAttributes;
+    if (attributes === undefined) continue;
+    if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'allowedAttributes must be an object', { requestType: entry.type, targetCredentialType: target });
+    }
+    if (attributes.name && !sources.some((source) => source === PersonalDataSource.PlatformUserData || source === PersonalDataSource.OfficialDocument)) {
+      throw sdkError('ATTRIBUTE_SOURCE_NOT_ALLOWED', 'name requires platformUserData or officialDocument capability', { requestType: entry.type, targetCredentialType: target });
+    }
+    for (const attribute of ['profilePicture', 'profileUrl', 'socialMedia'] as const) {
+      if (attributes[attribute] && !sources.includes(PersonalDataSource.PlatformUserData)) {
+        throw sdkError('ATTRIBUTE_SOURCE_NOT_ALLOWED', `${attribute} requires platformUserData capability`, { requestType: entry.type, targetCredentialType: target });
+      }
+    }
+    validateCapabilityValues(entry.type, target, attributes);
+  }
+  for (const target of Object.keys(capabilities)) {
+    if (!entry.targetCredentialType.includes(target as TargetCredentialTypeValue)) {
+      throw sdkError('TARGET_VC_TYPE_NOT_ALLOWED', 'Target credential capability target is not selected for request type', {
+        requestType: entry.type,
+        targetCredentialType: target,
+      });
+    }
+  }
+}
+
+function validateCapabilityValues(requestType: string, target: TargetCredentialTypeValue, attributes: AttributeInput): void {
+  if (attributes.socialMedia !== undefined) {
+    const values = normalizeStringList(attributes.socialMedia, (item) => item.toLowerCase());
+    if (values.length === 0 || values.some((value) => !supportedSocialMediaValues.has(value))) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'allowed socialMedia values must be supported and non-empty', { requestType, targetCredentialType: target });
+    }
+  }
+  if (attributes.nationality !== undefined) {
+    if (target !== TargetCredentialType.Uniqueness) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'nationality capability requires UniquenessVerifiableCredential', { requestType, targetCredentialType: target });
+    }
+    const values = normalizeStringList(attributes.nationality, (item) => item.toUpperCase());
+    if (values.length === 0 || values.some((value) => !supportedNationalityValues.has(value))) {
+      throw sdkError('ATTRIBUTE_NOT_ALLOWED', 'allowed nationality values must be supported and non-empty', { requestType, targetCredentialType: target });
+    }
+  }
+}
+
+function configuredAttributes(policy: TargetCredentialPolicyConfig): AttributeInput {
+  return {
+    ...(policy.personalDataSource === PersonalDataSource.PlatformUserData
+      ? { name: true, profilePicture: true, socialMedia: ['facebook', 'linemessage'] }
+      : {}),
+    ...(policy.attributes ?? {}),
+  };
 }
 
 function assertRequiredPathsPresent(appConfig: PresentationAppConfig, target: TargetCredentialTypeValue): void {

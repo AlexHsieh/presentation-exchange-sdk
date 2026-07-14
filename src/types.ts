@@ -5,6 +5,7 @@ export type PolicyTierValue = (typeof PolicyTier)[keyof typeof PolicyTier];
 export type PersonalDataSourceValue = (typeof PersonalDataSource)[keyof typeof PersonalDataSource];
 export type TargetCredentialTypeValue = (typeof TargetCredentialType)[keyof typeof TargetCredentialType];
 export type AppStatus = 'draft' | 'testing' | 'active' | 'suspended' | 'revoked';
+export type PresentationRequestMode = 'configDriven' | 'developerDefined';
 
 export type SemanticAttribute =
   | 'type'
@@ -29,12 +30,32 @@ export interface TargetCredentialPolicyConfig {
   attributes?: AttributeInput;
 }
 
-export interface RequestCredentialTypeConfig {
+export interface TargetCredentialCapabilityConfig {
+  allowedPersonalDataSources: PersonalDataSourceValue[];
+  allowedAttributes?: AttributeInput;
+}
+
+interface RequestCredentialTypeConfigBase {
   type: string;
   description?: string;
   targetCredentialType: TargetCredentialTypeValue[];
-  targetCredentialPolicies?: Partial<Record<TargetCredentialTypeValue, TargetCredentialPolicyConfig>>;
 }
+
+export interface ConfigDrivenRequestCredentialTypeConfig extends RequestCredentialTypeConfigBase {
+  presentationRequestMode: 'configDriven';
+  targetCredentialPolicies: Partial<Record<TargetCredentialTypeValue, TargetCredentialPolicyConfig>>;
+  targetCredentialCapabilities?: never;
+}
+
+export interface DeveloperDefinedRequestCredentialTypeConfig extends RequestCredentialTypeConfigBase {
+  presentationRequestMode: 'developerDefined';
+  targetCredentialCapabilities: Partial<Record<TargetCredentialTypeValue, TargetCredentialCapabilityConfig>>;
+  targetCredentialPolicies?: never;
+}
+
+export type RequestCredentialTypeConfig =
+  | ConfigDrivenRequestCredentialTypeConfig
+  | DeveloperDefinedRequestCredentialTypeConfig;
 
 export interface PresentationScopeConfig {
   scopeId: string;
@@ -207,6 +228,8 @@ export interface PresentationRequestCreateFromConfigInput
   targetCredentialType?: TargetCredentialTypeValue;
   definition?: {
     id?: string;
+    name?: string;
+    purpose?: string;
     expirationMinimum?: Date | string;
   };
 }

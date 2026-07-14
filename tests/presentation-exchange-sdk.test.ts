@@ -56,9 +56,16 @@ function appConfig(
       type: requestType,
       description: 'Voter request',
       targetCredentialType: [TargetCredentialType.Human, TargetCredentialType.Uniqueness],
-      targetCredentialPolicies: {
-        [TargetCredentialType.Human]: { personalDataSource: PersonalDataSource.PlatformUserData },
-        [TargetCredentialType.Uniqueness]: { personalDataSource: PersonalDataSource.OfficialDocument, attributes: { nationality: ['TWN'] } },
+      presentationRequestMode: 'developerDefined',
+      targetCredentialCapabilities: {
+        [TargetCredentialType.Human]: {
+          allowedPersonalDataSources: [PersonalDataSource.PlatformUserData, PersonalDataSource.NotProvided],
+          allowedAttributes: { name: true, profilePicture: true, profileUrl: true, socialMedia: ['facebook', 'linemessage'] },
+        },
+        [TargetCredentialType.Uniqueness]: {
+          allowedPersonalDataSources: [PersonalDataSource.PlatformUserData, PersonalDataSource.OfficialDocument, PersonalDataSource.NotProvided],
+          allowedAttributes: { name: true, profilePicture: true, profileUrl: true, socialMedia: ['facebook', 'linemessage'], nationality: ['TWN', 'USA'] },
+        },
       },
     },
   ];
@@ -70,7 +77,14 @@ function appConfig(
       {
         scopeId: 'voting',
         title: 'Voting',
-        requestCredentialTypes: requestCredentialTypes ?? defaultRequestCredentialTypes,
+        requestCredentialTypes: (requestCredentialTypes ?? defaultRequestCredentialTypes).map((entry) => {
+          if ('presentationRequestMode' in entry) return entry;
+          return {
+            ...entry,
+            presentationRequestMode: 'configDriven' as const,
+            targetCredentialPolicies: entry.targetCredentialPolicies ?? {},
+          } as RequestCredentialTypeConfig;
+        }),
       },
     ],
     allowedOrigin: 'https://vote.example',
@@ -83,6 +97,21 @@ function appConfig(
     version: '2026-06-03.1',
     ...scopedOverrides,
   };
+}
+
+function configDrivenAppConfig(): PresentationAppConfig {
+  return appConfig({
+    requestCredentialTypes: [{
+      type: requestType,
+      description: 'Voter request',
+      targetCredentialType: [TargetCredentialType.Human, TargetCredentialType.Uniqueness],
+      presentationRequestMode: 'configDriven',
+      targetCredentialPolicies: {
+        [TargetCredentialType.Human]: { personalDataSource: PersonalDataSource.PlatformUserData },
+        [TargetCredentialType.Uniqueness]: { personalDataSource: PersonalDataSource.OfficialDocument, attributes: { nationality: ['TWN'] } },
+      },
+    }],
+  });
 }
 
 const configRequestInput: PresentationRequestCreateFromConfigInput = {
@@ -462,7 +491,7 @@ describe('StatusListClient', () => {
 
 describe('Presentation Definition builder and canonicalization', () => {
   it('builds a valid normalized Presentation Definition with automatic required fields', () => {
-    const sdk = service();
+    const sdk = service(configDrivenAppConfig());
     const definition = sdk
       .presentationDefinition()
       .id('pd-vote-1')
@@ -929,7 +958,7 @@ describe('Presentation request creation', () => {
   it('creates config-driven request envelopes and returns the hashed Presentation Definition', async () => {
     const requestIssuerDid = await generatedRequestIssuerDid();
     const sdk = new PresentationService({
-      appConfig: appConfig({ appDid: requestIssuerDid.uri }),
+      appConfig: { ...configDrivenAppConfig(), appDid: requestIssuerDid.uri },
       requestIssuerDid,
     });
 
