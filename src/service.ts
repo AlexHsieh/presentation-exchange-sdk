@@ -23,6 +23,7 @@ import type {
   BuildPresentationDefinitionInput,
   BuildPresentationDefinitionFromConfigInput,
   PresentationPolicy,
+  PresentationDefinitionRegistryField,
   PresentationRequestCreateFromConfigInput,
   PresentationRequestCreateFromConfigResult,
   PresentationRequestCreateInput,
@@ -141,6 +142,9 @@ export class PresentationService {
     assertPresentationRequestMode(this.options.appConfig, input.requestType, 'configDriven');
     const { policy } = this.policyFromConfig(input.requestType, targetCredentialType);
     const configuredRequestType = this.requestCredentialTypeFromConfig(input.requestType);
+    const presentationDefinitionRegistryFields: PresentationDefinitionRegistryField[] = [];
+    if (input.definition?.name === undefined) presentationDefinitionRegistryFields.push('name');
+    if (input.definition?.purpose === undefined) presentationDefinitionRegistryFields.push('purpose');
     const presentationDefinition = this.buildPresentationDefinitionFromConfig({
       id: input.definition?.id ?? input.pdRequestId,
       name: input.definition?.name ?? configuredRequestType.scopeTitle,
@@ -155,6 +159,7 @@ export class PresentationService {
       targetCredentialType,
       presentationDefinition,
       policy,
+      presentationDefinitionRegistryFields,
     });
 
     return { envelope, presentationDefinition };
@@ -278,7 +283,11 @@ export class PresentationService {
     return configuredPolicyForTarget(entry, targetCredentialType);
   }
 
-  private async createConfigDrivenRequest(input: PresentationRequestCreateInput): Promise<PresentationRequestEnvelope> {
+  private async createConfigDrivenRequest(
+    input: PresentationRequestCreateInput & {
+      presentationDefinitionRegistryFields: PresentationDefinitionRegistryField[];
+    },
+  ): Promise<PresentationRequestEnvelope> {
     assertAppActive(this.options.appConfig);
     if (!this.options.requestIssuerDid) {
       throw sdkError('REQUEST_ISSUER_NOT_TRUSTED', 'requestIssuerDid is required to create request VCs');
@@ -291,10 +300,13 @@ export class PresentationService {
       mode: 'strict', appConfig: this.options.appConfig, requestType: input.requestType,
       targetCredentialType: input.targetCredentialType, expectedSubject: input.subject, policy: input.policy,
     });
-    return this.signRequest(input);
+    return this.signRequest(input, input.presentationDefinitionRegistryFields);
   }
 
-  private async signRequest(input: PresentationRequestCreateInput): Promise<PresentationRequestEnvelope> {
+  private async signRequest(
+    input: PresentationRequestCreateInput,
+    presentationDefinitionRegistryFields?: PresentationDefinitionRegistryField[],
+  ): Promise<PresentationRequestEnvelope> {
     const encodedDefinition = encodePresentationDefinition(input.presentationDefinition);
     const pdHash = computePresentationDefinitionHash(input.presentationDefinition);
     const expiresAt = assertFutureWithin(input.expiresAt, {
@@ -304,7 +316,8 @@ export class PresentationService {
     const vc = await VerifiableCredential.create({
       type: [RequestVcType.PresentationDefinitionTargetRequest, input.requestType], issuer: bearerDid.uri, subject: input.subject,
       data: { presentationDefinition: encodedDefinition, pdHash, pdRequestId: input.pdRequestId, pdRequestType: input.requestType,
-        pdFetchUrl: input.pdFetchUrl, submissionUrl: input.submissionUrl, nonce: input.nonce },
+        pdFetchUrl: input.pdFetchUrl, submissionUrl: input.submissionUrl, nonce: input.nonce,
+        ...(presentationDefinitionRegistryFields === undefined ? {} : { presentationDefinitionRegistryFields }) },
       issuanceDate: new Date().toISOString(), expirationDate: expiresAt,
     });
     const jwtVc = await vc.sign({ did: bearerDid });

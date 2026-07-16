@@ -125,9 +125,7 @@ const configRequestInput: PresentationRequestCreateFromConfigInput = {
   submissionUrl: 'https://vote.example/submit',
   definition: {
     id: 'type-check',
-    // @ts-expect-error Presentation Definition names come from the configured scope.
     name: 'caller-controlled name',
-    // @ts-expect-error Presentation Definition purposes come from the configured request type.
     purpose: 'caller-controlled purpose',
   },
 };
@@ -1027,7 +1025,49 @@ describe('Presentation request creation', () => {
       pdFetchUrl: 'https://vote.example/pd?sessionId=session-config-1',
       submissionUrl: 'https://vote.example/submit',
       nonce: 'nonce-config-1',
+      presentationDefinitionRegistryFields: ['name', 'purpose'],
     });
+  });
+
+  it('marks only config-derived definition metadata without changing the PD encoding or hash', async () => {
+    const requestIssuerDid = await generatedRequestIssuerDid();
+    const sdk = new PresentationService({
+      appConfig: configDrivenAppConfig({ appDid: requestIssuerDid.uri }),
+      requestIssuerDid,
+    });
+    const common = {
+      requestType,
+      subject,
+      nonce: 'nonce-config-metadata',
+      expiresAt: new Date(Date.now() + 60_000),
+      pdFetchUrl: 'https://vote.example/pd',
+      submissionUrl: 'https://vote.example/submit',
+    };
+
+    const mixed = await sdk.createRequestFromConfig({
+      ...common,
+      pdRequestId: 'session-config-mixed',
+      definition: { name: 'Caller title' },
+    });
+    expect(mixed.presentationDefinition.name).toBe('Caller title');
+    expect(mixed.presentationDefinition.input_descriptors[0].purpose).toBe('Voter request');
+    expect(mixed.envelope.pdHash).toBe(computePresentationDefinitionHash(mixed.presentationDefinition));
+    expect(VerifiableCredential.parseJwt({ vcJwt: mixed.envelope.jwtVc }).vcDataModel.credentialSubject)
+      .toMatchObject({
+        presentationDefinition: encodePresentationDefinition(mixed.presentationDefinition),
+        presentationDefinitionRegistryFields: ['purpose'],
+      });
+
+    const callerOwned = await sdk.createRequestFromConfig({
+      ...common,
+      pdRequestId: 'session-config-caller-owned',
+      definition: { name: 'Caller title', purpose: 'Caller purpose' },
+    });
+    expect(callerOwned.presentationDefinition.name).toBe('Caller title');
+    expect(callerOwned.presentationDefinition.input_descriptors[0].purpose).toBe('Caller purpose');
+    expect(callerOwned.envelope.pdHash).toBe(computePresentationDefinitionHash(callerOwned.presentationDefinition));
+    expect(VerifiableCredential.parseJwt({ vcJwt: callerOwned.envelope.jwtVc }).vcDataModel.credentialSubject)
+      .toMatchObject({ presentationDefinitionRegistryFields: [] });
   });
 
   it('creates config-driven uniqueness requests with scope-derived definition metadata', async () => {

@@ -6,6 +6,7 @@ export type PersonalDataSourceValue = (typeof PersonalDataSource)[keyof typeof P
 export type TargetCredentialTypeValue = (typeof TargetCredentialType)[keyof typeof TargetCredentialType];
 export type AppStatus = 'draft' | 'testing' | 'active' | 'suspended' | 'revoked';
 export type PresentationRequestMode = 'configDriven' | 'developerDefined';
+export type PresentationDefinitionRegistryField = 'name' | 'purpose';
 
 export type SemanticAttribute =
   | 'type'
