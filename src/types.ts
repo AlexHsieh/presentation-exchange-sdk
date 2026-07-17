@@ -248,6 +248,10 @@ export interface PresentationRequestEnvelope {
 export interface PresentationRequestCreateFromConfigResult {
   envelope: PresentationRequestEnvelope;
   presentationDefinition: PresentationDefinitionV2;
+  verificationContext: {
+    policy: PresentationPolicy;
+    targetCredentialType: TargetCredentialTypeValue;
+  };
 }
 
 export interface PresentationSubmissionEnvelope {

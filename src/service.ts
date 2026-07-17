@@ -162,7 +162,11 @@ export class PresentationService {
       presentationDefinitionRegistryFields,
     });
 
-    return { envelope, presentationDefinition };
+    return {
+      envelope,
+      presentationDefinition,
+      verificationContext: { policy, targetCredentialType },
+    };
   }
 
   async verifySubmission(input: VerifySubmissionInput): Promise<VerifiedPresentation> {

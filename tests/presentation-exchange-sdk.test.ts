@@ -989,7 +989,7 @@ describe('Presentation request creation', () => {
       requestIssuerDid,
     });
 
-    const { envelope, presentationDefinition } = await sdk.createRequestFromConfig({
+    const { envelope, presentationDefinition, verificationContext } = await sdk.createRequestFromConfig({
       requestType,
       subject,
       pdRequestId: 'session-config-1',
@@ -1014,6 +1014,13 @@ describe('Presentation request creation', () => {
       pattern: TargetCredentialType.Human,
     });
     expect(filterFor(presentationDefinition, PresentationPath.Name)).toEqual({ type: 'string' });
+    expect(verificationContext).toEqual({
+      policy: {
+        tier: PolicyTier.Human,
+        personalDataSource: PersonalDataSource.PlatformUserData,
+      },
+      targetCredentialType: TargetCredentialType.Human,
+    });
 
     const parsed = VerifiableCredential.parseJwt({ vcJwt: envelope.jwtVc });
     expect(parsed.vcDataModel.credentialSubject).toEqual({
@@ -1078,7 +1085,7 @@ describe('Presentation request creation', () => {
     });
     const expirationMinimum = new Date(Date.now() + 86_400_000);
 
-    const { envelope, presentationDefinition } = await sdk.createRequestFromConfig({
+    const { envelope, presentationDefinition, verificationContext } = await sdk.createRequestFromConfig({
       requestType,
       targetCredentialType: TargetCredentialType.Uniqueness,
       subject,
@@ -1108,6 +1115,13 @@ describe('Presentation request creation', () => {
     expect(filterFor(presentationDefinition, PresentationPath.PersonalDataSource)).toEqual({
       type: 'string',
       const: PersonalDataSource.OfficialDocument,
+    });
+    expect(verificationContext).toEqual({
+      policy: {
+        tier: PolicyTier.Uniqueness,
+        personalDataSource: PersonalDataSource.OfficialDocument,
+      },
+      targetCredentialType: TargetCredentialType.Uniqueness,
     });
     expect(filterFor(presentationDefinition, PresentationPath.Nationality)).toEqual({ type: 'string', enum: ['TWN'] });
     expect(filterFor(presentationDefinition, PresentationPath.ExpirationDate)).toEqual({
