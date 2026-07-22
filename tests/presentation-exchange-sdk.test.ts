@@ -476,6 +476,33 @@ describe('StatusListClient', () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
+  it('retains sealed status lists without refetching them', async () => {
+    vi.spyOn(VerifiableCredential, 'verify').mockResolvedValue({} as never);
+    vi.spyOn(VerifiableCredential, 'parseJwt').mockReturnValue({
+      vcDataModel: { id: 'status-vc-sealed', type: ['VerifiableCredential', 'StatusList2021Credential'] },
+    } as never);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      statusListJwt: 'sealed-status-jwt',
+      nextCheckAt: null,
+      lifecycleStatus: 'sealed',
+      mutable: false,
+    })));
+    let nowMs = Date.parse('2026-07-22T00:00:00Z');
+    const client = new StatusListClient({
+      statusListUrl: 'https://status.example/statuslist',
+      fetch: fetchMock as never,
+      now: () => new Date(nowMs),
+    });
+
+    const first = await client.getStatusList('https://status.example/statuslist/list-sealed');
+    nowMs += 365 * 24 * 60 * 60 * 1000;
+    const second = await client.getStatusList('https://status.example/statuslist/list-sealed');
+
+    expect(first).toMatchObject({ nextCheckAt: null, lifecycleStatus: 'sealed', mutable: false });
+    expect(second.statusListJwt).toBe('sealed-status-jwt');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('returns false when the credential is revoked', async () => {
     vi.spyOn(VerifiableCredential, 'verify').mockResolvedValue({} as never);
     vi.spyOn(VerifiableCredential, 'parseJwt')

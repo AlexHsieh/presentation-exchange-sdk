@@ -118,7 +118,9 @@ export type CredentialStatusVerifier = (input: CredentialStatusVerificationInput
 export type StatusListResponseBody = {
   statusListJwt: string;
   updatedAt?: string;
-  nextCheckAt?: string;
+  nextCheckAt?: string | null;
+  lifecycleStatus?: string;
+  mutable?: boolean;
 };
 
 export type StatusListCacheEntry = {
@@ -127,7 +129,9 @@ export type StatusListCacheEntry = {
   statusListCredential: Record<string, unknown>;
   fetchedAt: Date;
   updatedAt?: string;
-  nextCheckAt?: string;
+  nextCheckAt?: string | null;
+  lifecycleStatus?: string;
+  mutable?: boolean;
   etag?: string;
   lastModified?: string;
 };

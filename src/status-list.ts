@@ -85,6 +85,8 @@ export class StatusListClient {
       fetchedAtMs: nowMs,
       updatedAt: payload.updatedAt,
       nextCheckAt: payload.nextCheckAt,
+      lifecycleStatus: payload.lifecycleStatus,
+      mutable: payload.mutable,
       etag: response.headers.get('etag') ?? undefined,
       lastModified: response.headers.get('last-modified') ?? undefined,
     };
@@ -147,6 +149,9 @@ export async function verifyCredentialStatus(
 }
 
 function isCacheExpired(entry: InternalStatusListCacheEntry, nowMs: number, ttlMs: number): boolean {
+  if (entry.mutable === false) {
+    return false;
+  }
   if (entry.nextCheckAt) {
     const nextCheckAt = Date.parse(entry.nextCheckAt);
     if (!Number.isNaN(nextCheckAt)) {
@@ -200,6 +205,8 @@ function toPublicEntry(entry: InternalStatusListCacheEntry): StatusListCacheEntr
     fetchedAt: entry.fetchedAt,
     updatedAt: entry.updatedAt,
     nextCheckAt: entry.nextCheckAt,
+    lifecycleStatus: entry.lifecycleStatus,
+    mutable: entry.mutable,
     etag: entry.etag,
     lastModified: entry.lastModified,
   };
