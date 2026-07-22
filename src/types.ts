@@ -152,7 +152,48 @@ export interface VerifyCredentialInput {
   credentialJwt: string;
   expectedTargetCredentialType?: TargetCredentialTypeValue;
   acceptedProviderDids?: string[];
+  /** Whether a credentialStatus reference must be present and usable. */
+  credentialStatusPolicy?: 'required' | 'ifPresent';
 }
+
+export type CredentialValidityInvalidReason =
+  | 'malformed'
+  | 'signature_invalid'
+  | 'dates_invalid'
+  | 'not_yet_valid'
+  | 'expired'
+  | 'issuer_not_allowed'
+  | 'type_not_allowed'
+  | 'unsupported_type'
+  | 'status_required'
+  | 'revoked'
+  | 'status_rejected'
+  | 'status_reference_not_allowed';
+
+export type CredentialValidityIndeterminateReason =
+  | 'status_list_unavailable'
+  | 'status_list_invalid'
+  | 'status_check_failed';
+
+export type CredentialValidityResult =
+  | {
+      status: 'valid';
+      credential: VerifiedCredential;
+      checkedAt: string;
+    }
+  | {
+      status: 'invalid';
+      reason: CredentialValidityInvalidReason;
+      checkedAt: string;
+      details?: Record<string, unknown>;
+    }
+  | {
+      status: 'indeterminate';
+      reason: CredentialValidityIndeterminateReason;
+      checkedAt: string;
+      retryable: true;
+      details?: Record<string, unknown>;
+    };
 
 export interface VerifiedCredential {
   issuerDid: string;
@@ -289,6 +330,7 @@ export interface VerifySubmissionInput {
   expected: ExpectedPresentationRequestState;
   storedPresentationDefinition: PresentationDefinitionV2;
   policy: PresentationPolicy;
+  credentialStatusPolicy?: VerifyCredentialInput['credentialStatusPolicy'];
 }
 
 export interface VerifiedPresentation extends VerifiedCredential {

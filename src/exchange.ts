@@ -104,6 +104,7 @@ export async function verifyAndNormalizeSubmission(params: {
       credentialJwt,
       acceptedProviderDids,
       expectedTargetCredentialType,
+      credentialStatusPolicy: input.credentialStatusPolicy,
     },
     credentialStatusVerifier,
     input,
@@ -122,7 +123,7 @@ export async function verifyCredentialJwt(
   credentialStatusVerifier?: CredentialStatusVerifier,
   submissionInput?: VerifySubmissionInput,
 ): Promise<VerifiedCredential> {
-  const { credentialJwt, acceptedProviderDids = [], expectedTargetCredentialType } = input;
+  const { credentialJwt, acceptedProviderDids = [], expectedTargetCredentialType, credentialStatusPolicy = 'ifPresent' } = input;
   let credential: VerifiableCredential;
   try {
     credential = VerifiableCredential.parseJwt({ vcJwt: credentialJwt });
@@ -157,10 +158,15 @@ export async function verifyCredentialJwt(
 
   const issuanceDate = credential.vcDataModel.issuanceDate;
   const expirationDate = credential.vcDataModel.expirationDate;
-  if (!issuanceDate || !expirationDate || Number.isNaN(Date.parse(String(expirationDate)))) {
+  const issuanceMs = issuanceDate ? Date.parse(String(issuanceDate)) : Number.NaN;
+  const expirationMs = expirationDate ? Date.parse(String(expirationDate)) : Number.NaN;
+  if (!issuanceDate || !expirationDate || Number.isNaN(issuanceMs) || Number.isNaN(expirationMs)) {
     throw sdkError('PRESENTATION_SUBMISSION_INVALID', 'Credential issuanceDate and expirationDate are required');
   }
-  if (Date.parse(String(expirationDate)) <= Date.now()) {
+  if (issuanceMs > Date.now()) {
+    throw sdkError('PRESENTATION_SUBMISSION_INVALID', 'Credential issuanceDate is in the future', { issuanceDate });
+  }
+  if (expirationMs <= Date.now()) {
     throw sdkError('PRESENTATION_REQUEST_EXPIRED', 'Credential is expired', { expirationDate });
   }
 
@@ -169,6 +175,9 @@ export async function verifyCredentialJwt(
     validatePolicyAttributes(submissionInput, credentialSubject, credentialTypes);
   }
   const statusList = statusListFromCredential(credential);
+  if (credentialStatusPolicy === 'required' && !statusList?.url) {
+    throw sdkError('CREDENTIAL_STATUS_INVALID', 'Credential status list is required', { reason: 'status_required' });
+  }
   if (credentialStatusVerifier) {
     const ok = await credentialStatusVerifier({ statusList, credentialJwt, credentialSubject });
     if (!ok) {

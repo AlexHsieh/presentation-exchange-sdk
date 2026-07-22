@@ -1497,6 +1497,54 @@ describe('Submission verification', () => {
   });
 });
 
+describe('Stored credential validity', () => {
+  it('returns grouped valid, expired, and required-status outcomes', async () => {
+    const issuerDid = await DidJwk.create();
+    const holderDid = await DidJwk.create();
+    const sdk = new PresentationService({
+      appConfig: appConfig({ acceptedCredentialProviders: [issuerDid.uri] }),
+    });
+    const { credentialJwt } = await signedVpFor({ issuerDid, holderDid });
+
+    await expect(sdk.checkCredentialValidity({ credentialJwt })).resolves.toMatchObject({ status: 'valid' });
+    await expect(sdk.checkCredentialValidity({ credentialJwt, credentialStatusPolicy: 'required' })).resolves.toMatchObject({
+      status: 'invalid', reason: 'status_required',
+    });
+
+    const expired = await signedVpFor({
+      issuerDid,
+      holderDid,
+      expirationDate: new Date(Date.now() - 1_000).toISOString(),
+    });
+    await expect(sdk.checkCredentialValidity({ credentialJwt: expired.credentialJwt })).resolves.toMatchObject({
+      status: 'invalid', reason: 'expired',
+    });
+  });
+
+  it('maps the default status-list verifier revocation error to an invalid revoked result', async () => {
+    const issuerDid = await DidJwk.create();
+    const holderDid = await DidJwk.create();
+    const { credentialJwt } = await signedVpFor({ issuerDid, holderDid });
+    const parsed = VerifiableCredential.parseJwt({ vcJwt: credentialJwt });
+    (parsed.vcDataModel as any).credentialStatus = {
+      statusListIndex: '7',
+      statusListCredential: 'https://status.example/statuslist/list-1',
+    };
+    vi.spyOn(VerifiableCredential, 'parseJwt').mockReturnValue(parsed);
+    vi.spyOn(StatusListClient.prototype, 'verifyCredentialStatus').mockResolvedValue(false);
+    const sdk = new PresentationService({
+      appConfig: appConfig({
+        acceptedCredentialProviders: [issuerDid.uri],
+        statusListUrl: 'https://status.example/statuslist',
+      }),
+    });
+
+    await expect(sdk.checkCredentialValidity({ credentialJwt, credentialStatusPolicy: 'required' })).resolves.toMatchObject({
+      status: 'invalid', reason: 'revoked',
+    });
+  });
+});
+
 function verifyInput(params: {
   vpJwt: string;
   storedPresentationDefinition: PresentationDefinitionV2;

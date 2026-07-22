@@ -14,7 +14,7 @@ import {
 } from './config.js';
 import { computePresentationDefinitionHash, encodePresentationDefinition } from './canonicalization.js';
 import { buildPresentationDefinition, validatePresentationDefinition } from './definition.js';
-import { sdkError } from './errors.js';
+import { PresentationSdkError, sdkError } from './errors.js';
 import { assertFutureWithin, PRESENTATION_REQUEST_MAX_EXPIRES_IN_MS } from './expiration.js';
 import { normalizeSubmissionEnvelope, verifyAndNormalizeSubmission, verifyCredentialJwt } from './exchange.js';
 import { StatusListClient } from './status-list.js';
@@ -32,6 +32,7 @@ import type {
   PresentationServiceOptions,
   StatusListCacheEntry,
   StatusListReference,
+  CredentialValidityResult,
   VerifiedCredential,
   VerifiedPresentation,
   VerifyCredentialInput,
@@ -232,6 +233,49 @@ export class PresentationService {
     );
   }
 
+  /**
+   * Classifies a stored credential without using exceptions for expected validity outcomes.
+   * Use verifyCredential() when an invalid credential should reject the current operation.
+   */
+  async checkCredentialValidity(input: VerifyCredentialInput): Promise<CredentialValidityResult> {
+    assertAppActive(this.options.appConfig);
+    const checkedAt = new Date().toISOString();
+
+    // Parse separately so callers can distinguish an unreadable JWT from one whose proof is invalid.
+    let parsedCredential: VerifiableCredential;
+    try {
+      parsedCredential = VerifiableCredential.parseJwt({ vcJwt: input.credentialJwt });
+    } catch (error) {
+      return invalid('malformed', checkedAt, error);
+    }
+
+    const issuanceDate = parsedCredential.vcDataModel.issuanceDate;
+    const expirationDate = parsedCredential.vcDataModel.expirationDate;
+    const issuanceMs = issuanceDate ? Date.parse(String(issuanceDate)) : Number.NaN;
+    const expirationMs = expirationDate ? Date.parse(String(expirationDate)) : Number.NaN;
+    if (!issuanceDate || !expirationDate || Number.isNaN(issuanceMs) || Number.isNaN(expirationMs)) {
+      return { status: 'invalid', reason: 'dates_invalid', checkedAt };
+    }
+    if (issuanceMs > Date.now()) return { status: 'invalid', reason: 'not_yet_valid', checkedAt, details: { issuanceDate } };
+    if (expirationMs <= Date.now()) return { status: 'invalid', reason: 'expired', checkedAt, details: { expirationDate } };
+
+    try {
+      await VerifiableCredential.verify({ vcJwt: input.credentialJwt });
+    } catch (error) {
+      return invalid('signature_invalid', checkedAt, error);
+    }
+
+    try {
+      const credential = await this.verifyCredential(input);
+      return { status: 'valid', credential, checkedAt };
+    } catch (error) {
+      if (!(error instanceof PresentationSdkError)) {
+        return { status: 'indeterminate', reason: 'status_check_failed', checkedAt, retryable: true, details: { cause: messageFrom(error) } };
+      }
+      return validityResultFromSdkError(error, checkedAt);
+    }
+  }
+
   async getStatusList(input: string | StatusListReference): Promise<StatusListCacheEntry> {
     return this.requireStatusListClient().getStatusList(input);
   }
@@ -335,6 +379,50 @@ export class PresentationService {
     getRequestCredentialType(this.options.appConfig, requestType);
     throw new Error('Unreachable request credential type lookup');
   }
+}
+
+function invalid(reason: Extract<CredentialValidityResult, { status: 'invalid' }>['reason'], checkedAt: string, error: unknown): CredentialValidityResult {
+  return { status: 'invalid', reason, checkedAt, details: { cause: messageFrom(error) } };
+}
+
+function validityResultFromSdkError(error: PresentationSdkError, checkedAt: string): CredentialValidityResult {
+  const details = Object.keys(error.details).length > 0 ? error.details : undefined;
+  switch (error.code) {
+    case 'PRESENTATION_REQUEST_EXPIRED':
+      return { status: 'invalid', reason: 'expired', checkedAt, details };
+    case 'CREDENTIAL_PROVIDER_INVALID':
+      return { status: 'invalid', reason: 'issuer_not_allowed', checkedAt, details };
+    case 'TARGET_VC_TYPE_NOT_ALLOWED':
+      return { status: 'invalid', reason: 'type_not_allowed', checkedAt, details };
+    case 'CREDENTIAL_REVOKED':
+      return { status: 'invalid', reason: 'revoked', checkedAt, details };
+    case 'CREDENTIAL_STATUS_INVALID':
+      if (error.details.reason === 'status_required') {
+        return { status: 'invalid', reason: 'status_required', checkedAt, details };
+      }
+      return { status: 'invalid', reason: 'status_rejected', checkedAt, details };
+    case 'STATUS_LIST_URL_NOT_ALLOWED':
+      return { status: 'invalid', reason: 'status_reference_not_allowed', checkedAt, details };
+    case 'STATUS_LIST_FETCH_FAILED':
+      return { status: 'indeterminate', reason: 'status_list_unavailable', checkedAt, retryable: true, details };
+    case 'STATUS_LIST_INVALID':
+      return { status: 'indeterminate', reason: 'status_list_invalid', checkedAt, retryable: true, details };
+    case 'PRESENTATION_SUBMISSION_INVALID':
+      if (error.message.includes('future')) return { status: 'invalid', reason: 'not_yet_valid', checkedAt, details };
+      if (error.message.includes('issuanceDate') || error.message.includes('expirationDate')) {
+        return { status: 'invalid', reason: 'dates_invalid', checkedAt, details };
+      }
+      if (error.message.includes('supported target type')) {
+        return { status: 'invalid', reason: 'unsupported_type', checkedAt, details };
+      }
+      return { status: 'invalid', reason: 'malformed', checkedAt, details };
+    default:
+      return { status: 'indeterminate', reason: 'status_check_failed', checkedAt, retryable: true, details: { code: error.code, ...error.details } };
+  }
+}
+
+function messageFrom(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function assertBinding(field: string, actual: string, expected: string): void {
