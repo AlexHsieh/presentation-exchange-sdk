@@ -115,11 +115,14 @@ export type CredentialStatusVerificationInput = {
 
 export type CredentialStatusVerifier = (input: CredentialStatusVerificationInput) => Promise<boolean> | boolean;
 
+export type StatusListLifecycle = 'active' | 'retired' | 'sealing' | 'sealed' | 'unknown';
+export type KnownStatusListLifecycle = Exclude<StatusListLifecycle, 'unknown'>;
+
 export type StatusListResponseBody = {
   statusListJwt: string;
   updatedAt?: string;
   nextCheckAt?: string | null;
-  lifecycleStatus?: string;
+  lifecycleStatus?: KnownStatusListLifecycle;
   mutable?: boolean;
 };
 
@@ -130,7 +133,7 @@ export type StatusListCacheEntry = {
   fetchedAt: Date;
   updatedAt?: string;
   nextCheckAt?: string | null;
-  lifecycleStatus?: string;
+  lifecycleStatus?: KnownStatusListLifecycle;
   mutable?: boolean;
   etag?: string;
   lastModified?: string;
@@ -194,6 +197,13 @@ export type CredentialValidityResult =
       retryable: true;
       details?: Record<string, unknown>;
     };
+
+export type CredentialState = {
+  expiration: boolean;
+  revocation: 'not_revoked' | 'revoked' | 'unknown';
+  statusListLifecycle: StatusListLifecycle;
+  checkedAt: string;
+};
 
 export interface VerifiedCredential {
   issuerDid: string;

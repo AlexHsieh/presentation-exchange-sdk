@@ -32,6 +32,7 @@ import type {
   PresentationServiceOptions,
   StatusListCacheEntry,
   StatusListReference,
+  CredentialState,
   CredentialValidityResult,
   VerifiedCredential,
   VerifiedPresentation,
@@ -276,6 +277,45 @@ export class PresentationService {
     }
   }
 
+  /**
+   * Reports independently displayable state for a stored credential.
+   * Unlike checkCredentialValidity(), expiration does not short-circuit revocation lookup.
+   */
+  async checkCredentialState(input: VerifyCredentialInput): Promise<CredentialState> {
+    assertAppActive(this.options.appConfig);
+    const checkedAt = new Date().toISOString();
+    let parsedCredential: VerifiableCredential;
+    try {
+      parsedCredential = VerifiableCredential.parseJwt({ vcJwt: input.credentialJwt });
+    } catch {
+      return unknownCredentialState(false, checkedAt);
+    }
+
+    const expirationDate = parsedCredential.vcDataModel.expirationDate;
+    const expirationMs = expirationDate ? Date.parse(String(expirationDate)) : Number.NaN;
+    const expiration = !Number.isNaN(expirationMs) && expirationMs <= Date.parse(checkedAt);
+    const statusList = statusListReferenceFromCredential(parsedCredential);
+    if (!statusList?.url || !this.statusListClient) {
+      return unknownCredentialState(expiration, checkedAt);
+    }
+
+    try {
+      const entry = await this.statusListClient.getStatusList(statusList);
+      const notRevoked = await this.statusListClient.verifyCredentialStatus({
+        credentialJwt: input.credentialJwt,
+        statusList,
+      });
+      return {
+        expiration,
+        revocation: notRevoked ? 'not_revoked' : 'revoked',
+        statusListLifecycle: normalizeStatusListLifecycle(entry.lifecycleStatus),
+        checkedAt,
+      };
+    } catch {
+      return unknownCredentialState(expiration, checkedAt);
+    }
+  }
+
   async getStatusList(input: string | StatusListReference): Promise<StatusListCacheEntry> {
     return this.requireStatusListClient().getStatusList(input);
   }
@@ -423,6 +463,31 @@ function validityResultFromSdkError(error: PresentationSdkError, checkedAt: stri
 
 function messageFrom(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function statusListReferenceFromCredential(credential: VerifiableCredential): StatusListReference | undefined {
+  const raw = credential.vcDataModel.credentialStatus as unknown as Record<string, unknown> | undefined;
+  if (!raw) return undefined;
+  const url = typeof raw.statusListCredential === 'string' ? raw.statusListCredential : '';
+  const index = typeof raw.statusListIndex === 'string' && raw.statusListIndex.trim() !== ''
+    ? Number(raw.statusListIndex)
+    : Number.NaN;
+  if (!url || !Number.isSafeInteger(index) || index < 0) return undefined;
+  return {
+    index,
+    url,
+    ...(raw.id ? { credentialId: String(raw.id) } : {}),
+  };
+}
+
+function normalizeStatusListLifecycle(value: unknown): CredentialState['statusListLifecycle'] {
+  return value === 'active' || value === 'retired' || value === 'sealing' || value === 'sealed'
+    ? value
+    : 'unknown';
+}
+
+function unknownCredentialState(expiration: boolean, checkedAt: string): CredentialState {
+  return { expiration, revocation: 'unknown', statusListLifecycle: 'unknown', checkedAt };
 }
 
 function assertBinding(field: string, actual: string, expected: string): void {

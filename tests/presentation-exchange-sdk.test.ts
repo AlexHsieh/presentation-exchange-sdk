@@ -1545,6 +1545,186 @@ describe('Stored credential validity', () => {
   });
 });
 
+describe('Stored credential state', () => {
+  it('returns a safe unknown state for a malformed credential', async () => {
+    const sdk = new PresentationService({ appConfig: appConfig() });
+
+    await expect(sdk.checkCredentialState({ credentialJwt: 'not-a-jwt' })).resolves.toMatchObject({
+      expiration: false,
+      revocation: 'unknown',
+      statusListLifecycle: 'unknown',
+      checkedAt: expect.any(String),
+    });
+  });
+
+  it.each(['active', 'retired', 'sealing', 'sealed'] as const)(
+    'reports expired and revoked independently for a %s status list',
+    async (lifecycleStatus) => {
+      const issuerDid = await DidJwk.create();
+      const holderDid = await DidJwk.create();
+      const expired = await signedVpFor({
+        issuerDid,
+        holderDid,
+        expirationDate: new Date(Date.now() - 1_000).toISOString(),
+      });
+      const parsed = VerifiableCredential.parseJwt({ vcJwt: expired.credentialJwt });
+      (parsed.vcDataModel as any).credentialStatus = {
+        statusListIndex: '7',
+        statusListCredential: 'https://status.example/statuslist/list-1',
+      };
+      vi.spyOn(VerifiableCredential, 'parseJwt').mockReturnValue(parsed);
+      vi.spyOn(StatusListClient.prototype, 'getStatusList').mockResolvedValue({
+        statusListUrl: 'https://status.example/statuslist/list-1',
+        statusListJwt: 'status-jwt',
+        statusListCredential: {},
+        fetchedAt: new Date(),
+        lifecycleStatus,
+      });
+      vi.spyOn(StatusListClient.prototype, 'verifyCredentialStatus').mockResolvedValue(false);
+      const sdk = new PresentationService({
+        appConfig: appConfig({
+          acceptedCredentialProviders: [issuerDid.uri],
+          statusListUrl: 'https://status.example/statuslist',
+        }),
+      });
+
+      await expect(sdk.checkCredentialState({ credentialJwt: expired.credentialJwt })).resolves.toMatchObject({
+        expiration: true,
+        revocation: 'revoked',
+        statusListLifecycle: lifecycleStatus,
+        checkedAt: expect.any(String),
+      });
+    },
+  );
+
+  it('returns unknown status fields when the credential has no usable status reference', async () => {
+    const issuerDid = await DidJwk.create();
+    const holderDid = await DidJwk.create();
+    const { credentialJwt } = await signedVpFor({ issuerDid, holderDid });
+    const sdk = new PresentationService({ appConfig: appConfig({ acceptedCredentialProviders: [issuerDid.uri] }) });
+
+    await expect(sdk.checkCredentialState({ credentialJwt })).resolves.toMatchObject({
+      expiration: false,
+      revocation: 'unknown',
+      statusListLifecycle: 'unknown',
+    });
+  });
+
+  it('treats a status reference with a missing index as unusable', async () => {
+    const issuerDid = await DidJwk.create();
+    const holderDid = await DidJwk.create();
+    const { credentialJwt } = await signedVpFor({ issuerDid, holderDid });
+    const parsed = VerifiableCredential.parseJwt({ vcJwt: credentialJwt });
+    (parsed.vcDataModel as any).credentialStatus = {
+      statusListCredential: 'https://status.example/statuslist/list-1',
+    };
+    vi.spyOn(VerifiableCredential, 'parseJwt').mockReturnValue(parsed);
+    const sdk = new PresentationService({
+      appConfig: appConfig({
+        acceptedCredentialProviders: [issuerDid.uri],
+        statusListUrl: 'https://status.example/statuslist',
+      }),
+    });
+
+    await expect(sdk.checkCredentialState({ credentialJwt })).resolves.toMatchObject({
+      expiration: false,
+      revocation: 'unknown',
+      statusListLifecycle: 'unknown',
+    });
+  });
+
+  it('returns unknown status fields when the status-list lookup fails', async () => {
+    const issuerDid = await DidJwk.create();
+    const holderDid = await DidJwk.create();
+    const { credentialJwt } = await signedVpFor({ issuerDid, holderDid });
+    const parsed = VerifiableCredential.parseJwt({ vcJwt: credentialJwt });
+    (parsed.vcDataModel as any).credentialStatus = {
+      statusListIndex: '1',
+      statusListCredential: 'https://status.example/statuslist/list-1',
+    };
+    vi.spyOn(VerifiableCredential, 'parseJwt').mockReturnValue(parsed);
+    vi.spyOn(StatusListClient.prototype, 'getStatusList').mockRejectedValue(new Error('offline'));
+    const sdk = new PresentationService({
+      appConfig: appConfig({
+        acceptedCredentialProviders: [issuerDid.uri],
+        statusListUrl: 'https://status.example/statuslist',
+      }),
+    });
+
+    await expect(sdk.checkCredentialState({ credentialJwt })).resolves.toMatchObject({
+      expiration: false,
+      revocation: 'unknown',
+      statusListLifecycle: 'unknown',
+    });
+  });
+
+  it('normalizes an unrecognized lifecycle to unknown without losing revocation state', async () => {
+    const issuerDid = await DidJwk.create();
+    const holderDid = await DidJwk.create();
+    const { credentialJwt } = await signedVpFor({ issuerDid, holderDid });
+    const parsed = VerifiableCredential.parseJwt({ vcJwt: credentialJwt });
+    (parsed.vcDataModel as any).credentialStatus = {
+      statusListIndex: '1',
+      statusListCredential: 'https://status.example/statuslist/list-1',
+    };
+    vi.spyOn(VerifiableCredential, 'parseJwt').mockReturnValue(parsed);
+    vi.spyOn(StatusListClient.prototype, 'getStatusList').mockResolvedValue({
+      statusListUrl: 'https://status.example/statuslist/list-1',
+      statusListJwt: 'status-jwt',
+      statusListCredential: {},
+      fetchedAt: new Date(),
+      lifecycleStatus: 'archived' as never,
+    });
+    vi.spyOn(StatusListClient.prototype, 'verifyCredentialStatus').mockResolvedValue(true);
+    const sdk = new PresentationService({
+      appConfig: appConfig({
+        acceptedCredentialProviders: [issuerDid.uri],
+        statusListUrl: 'https://status.example/statuslist',
+      }),
+    });
+
+    await expect(sdk.checkCredentialState({ credentialJwt })).resolves.toMatchObject({
+      revocation: 'not_revoked',
+      statusListLifecycle: 'unknown',
+    });
+  });
+
+  it('reuses one cached status-list fetch for lifecycle and revocation', async () => {
+    const issuerDid = await DidJwk.create();
+    const holderDid = await DidJwk.create();
+    const { credentialJwt } = await signedVpFor({ issuerDid, holderDid });
+    const parsed = VerifiableCredential.parseJwt({ vcJwt: credentialJwt });
+    (parsed.vcDataModel as any).credentialStatus = {
+      statusListIndex: '3',
+      statusListCredential: 'https://status.example/statuslist/list-1',
+    };
+    vi.spyOn(VerifiableCredential, 'verify').mockResolvedValue({} as never);
+    vi.spyOn(VerifiableCredential, 'parseJwt').mockImplementation(({ vcJwt }) => (
+      vcJwt === 'status-jwt'
+        ? { vcDataModel: { id: 'status-vc-1' } } as never
+        : parsed
+    ));
+    vi.spyOn(StatusListCredential, 'validateCredentialInStatusList').mockReturnValue(false);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      statusListJwt: 'status-jwt',
+      lifecycleStatus: 'active',
+    })));
+    const sdk = new PresentationService({
+      appConfig: appConfig({
+        acceptedCredentialProviders: [issuerDid.uri],
+        statusListUrl: 'https://status.example/statuslist',
+      }),
+    });
+
+    await expect(sdk.checkCredentialState({ credentialJwt })).resolves.toMatchObject({
+      expiration: false,
+      revocation: 'not_revoked',
+      statusListLifecycle: 'active',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 function verifyInput(params: {
   vpJwt: string;
   storedPresentationDefinition: PresentationDefinitionV2;
