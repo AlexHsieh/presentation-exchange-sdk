@@ -12,8 +12,8 @@ npm install @iamhuman.link/presentation-exchange-sdk
 
 Follow the iAMHuman developer documentation for integration:
 
-- [Add the SDK and load configuration](https://developer.iamhuman.link/docs/v1.0/personhood-credential-integration/add-sdk-and-load-config)
-- [Create a presentation request](https://developer.iamhuman.link/docs/v1.0/personhood-credential-integration/create-request)
+- [Add the SDK and load configuration](https://developer.iamhuman.link/docs/v1/personhood-credential-integration/add-sdk-and-load-config)
+- [Create a presentation request](https://developer.iamhuman.link/docs/v1/personhood-credential-integration/create-request)
 
 ## Configuration status
 
