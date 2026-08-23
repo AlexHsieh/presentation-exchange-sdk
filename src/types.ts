@@ -312,11 +312,6 @@ export interface PresentationRequestCreateFromConfigResult {
 export interface PresentationSubmissionEnvelope {
   vpJwt: string;
   presentationSubmission?: Record<string, unknown>;
-  /**
-   * @deprecated Use presentationSubmission. This outer-envelope alias is accepted until the next major release.
-   * It does not affect the Presentation Exchange presentation_submission property inside the signed VP.
-   */
-  presentation_submission?: Record<string, unknown>;
   pdRequestId: string;
   pdRequestType: string;
   pdHash: string;

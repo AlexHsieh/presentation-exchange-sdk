@@ -16,7 +16,7 @@ import { computePresentationDefinitionHash, encodePresentationDefinition } from 
 import { buildPresentationDefinition, validatePresentationDefinition } from './definition.js';
 import { PresentationSdkError, sdkError } from './errors.js';
 import { assertFutureWithin, PRESENTATION_REQUEST_MAX_EXPIRES_IN_MS } from './expiration.js';
-import { normalizeSubmissionEnvelope, verifyAndNormalizeSubmission, verifyCredentialJwt } from './exchange.js';
+import { verifyAndNormalizeSubmission, verifyCredentialJwt } from './exchange.js';
 import { StatusListClient } from './status-list.js';
 import type {
   AttributeInput,
@@ -173,7 +173,7 @@ export class PresentationService {
 
   async verifySubmission(input: VerifySubmissionInput): Promise<VerifiedPresentation> {
     assertAppActive(this.options.appConfig);
-    const submission = normalizeSubmissionEnvelope(input.submission);
+    const submission = input.submission;
 
     assertBinding('pdRequestId', submission.pdRequestId, input.expected.pdRequestId);
     assertBinding('pdRequestType', submission.pdRequestType, input.expected.pdRequestType);

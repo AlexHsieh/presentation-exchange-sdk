@@ -70,7 +70,7 @@ export async function verifyAndNormalizeSubmission(params: {
   expectedTargetCredentialType?: TargetCredentialTypeValue;
 }): Promise<VerifiedPresentation> {
   const { input, acceptedProviderDids, credentialStatusVerifier, expectedTargetCredentialType } = params;
-  const submission = normalizeSubmissionEnvelope(input.submission);
+  const submission = input.submission;
   let parsedVp: VerifiablePresentation;
   let walletDid: string;
 
@@ -195,14 +195,6 @@ export async function verifyCredentialJwt(
     expirationDate: String(expirationDate),
     ...(statusList ? { statusList } : {}),
     normalized: normalizedSubject(credentialSubject),
-  };
-}
-
-export function normalizeSubmissionEnvelope(submission: PresentationSubmissionEnvelope): PresentationSubmissionEnvelope {
-  return {
-    ...submission,
-    // Camel case is canonical for the outer submission envelope during the compatibility window.
-    presentationSubmission: submission.presentationSubmission ?? submission.presentation_submission,
   };
 }
 
