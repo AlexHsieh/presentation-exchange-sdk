@@ -194,6 +194,7 @@ export class PresentationService {
       throw sdkError('PD_HASH_MISMATCH', 'Stored Presentation Definition hash does not match expected hash', {
         expected: computedHash,
         actual: input.expected.pdHash,
+        source: 'stored',
       });
     }
 
@@ -428,7 +429,7 @@ function invalid(reason: Extract<CredentialValidityResult, { status: 'invalid' }
 function validityResultFromSdkError(error: PresentationSdkError, checkedAt: string): CredentialValidityResult {
   const details = Object.keys(error.details).length > 0 ? error.details : undefined;
   switch (error.code) {
-    case 'PRESENTATION_REQUEST_EXPIRED':
+    case 'CREDENTIAL_EXPIRED':
       return { status: 'invalid', reason: 'expired', checkedAt, details };
     case 'CREDENTIAL_PROVIDER_INVALID':
       return { status: 'invalid', reason: 'issuer_not_allowed', checkedAt, details };

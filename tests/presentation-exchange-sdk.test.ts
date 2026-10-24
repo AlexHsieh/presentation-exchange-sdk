@@ -1754,3 +1754,35 @@ async function expectRejectsSdkCode(promise: Promise<unknown>, expectedCode: str
   }
   throw new Error(`Expected PresentationSdkError ${expectedCode}`);
 }
+
+describe('credential expiry remains distinct from request expiry', () => {
+  it('reports authenticated expired credentials from both credential and VP verification', async () => {
+    const issuerDid = await DidJwk.create(), holderDid = await DidJwk.create();
+    const sdk = new PresentationService({ appConfig: appConfig({ acceptedCredentialProviders: [issuerDid.uri] }) });
+    const signed = await signedVpFor({ issuerDid, holderDid, expirationDate: new Date(Date.now() - 10_000).toISOString() });
+    await expect(sdk.verifyCredential({ credentialJwt: signed.credentialJwt })).rejects.toMatchObject({ code: 'CREDENTIAL_EXPIRED' });
+    const definition = sdk.buildPresentationDefinition({ id: 'pd-expired', requestType, targetCredentialType: TargetCredentialType.Human, subject, policy: policy(), attributes: { name: true } });
+    const input = verifyInput({ vpJwt: signed.vpJwt, storedPresentationDefinition: definition, pdHash: computePresentationDefinitionHash(definition) });
+    await expect(sdk.verifySubmission(input)).rejects.toMatchObject({ code: 'CREDENTIAL_EXPIRED' });
+    // A signed outer VP must not turn an invalid embedded signature into expiry.
+    const parts = signed.credentialJwt.split('.');
+    parts[2] = (parts[2][0] === 'A' ? 'B' : 'A') + parts[2].slice(1);
+    const forgedCredential = parts.join('.');
+    await expect(sdk.verifyCredential({ credentialJwt: forgedCredential })).rejects.toMatchObject({ code: 'PRESENTATION_SUBMISSION_INVALID' });
+    const presentation = await VerifiablePresentation.create({ holder: holderDid.uri, vcJwts: [forgedCredential] });
+    const forgedVp = await presentation.sign({ did: holderDid });
+    await expect(sdk.verifySubmission({ ...input, submission: { ...input.submission, vpJwt: forgedVp } })).rejects.toMatchObject({ code: 'VP_VERIFY_FAILED' });
+  });
+});
+
+it('uses CREDENTIAL_EXPIRED for the explicit millisecond date check too', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2030-01-01T00:00:00.500Z'));
+  try {
+    const issuerDid = await DidJwk.create(), holderDid = await DidJwk.create();
+    const sdk = new PresentationService({ appConfig: appConfig({ acceptedCredentialProviders: [issuerDid.uri] }) });
+    const signed = await signedVpFor({ issuerDid, holderDid, expirationDate: '2030-01-01T00:00:00.499Z' });
+    // JWT second precision still passes; the SDK's precise date check rejects.
+    await expect(sdk.verifyCredential({ credentialJwt: signed.credentialJwt })).rejects.toMatchObject({ code: 'CREDENTIAL_EXPIRED' });
+  } finally { vi.useRealTimers(); }
+});

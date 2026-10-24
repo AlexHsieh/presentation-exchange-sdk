@@ -23,7 +23,8 @@ export type PresentationSdkErrorCode =
   | 'STATUS_LIST_URL_NOT_ALLOWED'
   | 'STATUS_LIST_FETCH_FAILED'
   | 'STATUS_LIST_INVALID'
-  | 'CREDENTIAL_REVOKED';
+  | 'CREDENTIAL_REVOKED'
+  | 'CREDENTIAL_EXPIRED';
 
 export type PresentationSdkErrorShape = {
   code: PresentationSdkErrorCode;

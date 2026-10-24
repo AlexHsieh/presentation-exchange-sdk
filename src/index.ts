@@ -19,6 +19,8 @@ export {
   PRESENTATION_REQUEST_MAX_EXPIRES_IN_MS,
 } from './expiration.js';
 export { PresentationSdkError } from './errors.js';
+export { PresentationSubmissionErrorCode, createPresentationSubmissionError, classifyPresentationSubmissionError, classifyPresentationCredentialState, isPresentationSubmissionErrorCode } from './submission-response.js';
+export type { PresentationSubmissionErrorClassification } from './submission-response.js';
 export {
   constants,
   isPersonalDataSourceValue,

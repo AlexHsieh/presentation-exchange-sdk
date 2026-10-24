@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Jwt, PresentationExchange, VerifiableCredential, VerifiablePresentation, type PresentationDefinitionV2 } from '@web5/credentials';
 import { PresentationPath } from './constants.js';
 import { sdkError } from './errors.js';
+import { hasAuthenticExpiredCredential, isAuthenticExpiredCredential } from './credential-expiration.js';
 import { extractRequiredPaths, validateWithPresentationExchange } from './definition.js';
 import { normalizePresentationPath, tierFromCredentialTypes } from './policy.js';
 import type {
@@ -85,6 +86,9 @@ export async function verifyAndNormalizeSubmission(params: {
     }
     parsedVp = VerifiablePresentation.parseJwt({ vpJwt: submission.vpJwt });
   } catch (error) {
+    if (await hasAuthenticExpiredCredential(submission.vpJwt)) {
+      throw sdkError('CREDENTIAL_EXPIRED', 'Credential is expired');
+    }
     throw sdkError('VP_VERIFY_FAILED', messageFrom(error), { cause: messageFrom(error) });
   }
 
@@ -129,6 +133,9 @@ export async function verifyCredentialJwt(
     credential = VerifiableCredential.parseJwt({ vcJwt: credentialJwt });
     await VerifiableCredential.verify({ vcJwt: credentialJwt });
   } catch (error) {
+    if (await isAuthenticExpiredCredential(credentialJwt)) {
+      throw sdkError('CREDENTIAL_EXPIRED', 'Credential is expired');
+    }
     throw sdkError('PRESENTATION_SUBMISSION_INVALID', 'Unable to parse or verify primary credential', {
       cause: messageFrom(error),
     });
@@ -167,7 +174,7 @@ export async function verifyCredentialJwt(
     throw sdkError('PRESENTATION_SUBMISSION_INVALID', 'Credential issuanceDate is in the future', { issuanceDate });
   }
   if (expirationMs <= Date.now()) {
-    throw sdkError('PRESENTATION_REQUEST_EXPIRED', 'Credential is expired', { expirationDate });
+    throw sdkError('CREDENTIAL_EXPIRED', 'Credential is expired', { expirationDate });
   }
 
   const credentialSubject = subjectFromCredential(credential);
