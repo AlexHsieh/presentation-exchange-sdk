@@ -319,6 +319,30 @@ export interface PresentationSubmissionEnvelope {
   appId: string;
 }
 
+/** HTTP success returned only after the application persists the verified result. */
+export interface PresentationSubmissionSuccessResponse {
+  ok: true;
+  /** App-owned ID of the persisted verification result. */
+  recordId: string;
+  /** @deprecated Will be removed in a future release. Use HTTP 200/201 and ok instead. */
+  status?: 'verified';
+}
+
+/** HTTP 4xx/5xx response. message must be safe to display to the user. */
+export interface PresentationSubmissionErrorResponse {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    retryable?: boolean;
+    retryAfterSeconds?: number | null;
+  };
+}
+
+export type PresentationSubmissionResponse =
+  | PresentationSubmissionSuccessResponse
+  | PresentationSubmissionErrorResponse;
+
 export interface ExpectedPresentationRequestState {
   pdRequestId: string;
   pdRequestType: string;
