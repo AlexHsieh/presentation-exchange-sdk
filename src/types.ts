@@ -363,7 +363,11 @@ export interface VerifySubmissionInput {
 }
 
 export interface VerifiedPresentation extends VerifiedCredential {
+  /** Opaque VP holder identifier; may be a DID. */
+  holderId: string;
+  /** @deprecated Use holderId. Retained throughout SDK 1.x; removed in 2.0. */
   holderDid: string;
+  /** DID used to sign the presentation. */
   walletDid: string;
   vpDigest: string;
 }

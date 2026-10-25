@@ -1304,6 +1304,7 @@ describe('Submission verification', () => {
     );
 
     expect(verified).toMatchObject({
+      holderId: holderDid.uri,
       holderDid: holderDid.uri,
       walletDid: holderDid.uri,
       issuerDid: issuerDid.uri,
@@ -1357,7 +1358,8 @@ describe('Submission verification', () => {
       }),
     );
 
-    expect(verified.holderDid).toBe(appScopedHolder);
+    expect(verified.holderId).toBe(appScopedHolder);
+    expect(verified.holderDid).toBe(verified.holderId);
     expect(verified.walletDid).toBe(walletDid.uri);
   });
 

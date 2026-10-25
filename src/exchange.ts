@@ -114,8 +114,10 @@ export async function verifyAndNormalizeSubmission(params: {
     input,
   );
 
+  const holderId = String(parsedVp.holder ?? '');
   return {
-    holderDid: String(parsedVp.holder ?? ''),
+    holderId,
+    holderDid: holderId,
     walletDid,
     ...verifiedCredential,
     vpDigest: createHash('sha256').update(submission.vpJwt).digest('hex'),

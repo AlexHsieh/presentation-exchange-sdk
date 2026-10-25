@@ -28,6 +28,16 @@ npm run build
 npm test
 ```
 
+## What's new in 1.2.0
+
+`verifySubmission()` now returns `holderId`, the opaque identifier carried in the
+presentation's `holder` field. It may be a DID. `walletDid` remains the DID used to
+sign the presentation and can differ from `holderId`.
+
+Use `holderId` in new integrations. `holderDid` remains an identical, deprecated
+alias throughout SDK 1.x and will be removed in 2.0. This change does not alter
+identifier values or the presentation and credential formats.
+
 ## What's new in 1.1.0
 
 
