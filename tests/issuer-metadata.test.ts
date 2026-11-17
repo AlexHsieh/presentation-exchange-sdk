@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fetchIssuerMetadata } from '../src/issuer-metadata';
-const issuer = { did: 'did:example:issuer', environment: 'stage', name: 'I Am Human', description: 'Description', iconUrl: 'https://firebasestorage.googleapis.com/icon?token=public', websiteUrl: 'https://stage.iamhuman.link', defaultLocale: 'en', localizations: { 'zh-Hant': { name: 'I Am Human', description: '中文' } } };
+const issuer = { did: 'did:example:issuer', name: 'I Am Human', description: 'Description', iconUrl: 'https://firebasestorage.googleapis.com/icon?token=public', websiteUrl: 'https://stage.iamhuman.link', defaultLocale: 'en', localizations: { 'zh-Hant': { name: 'I Am Human', description: '中文' } } };
 const input = { did: issuer.did, registryBaseUrl: 'https://example.com/appregistry' };
 describe('public issuer metadata', () => {
  it('preserves base paths, encodes DID and leaves Firebase URL unchanged', async () => {
@@ -10,6 +10,12 @@ describe('public issuer metadata', () => {
   expect(new URL(url).pathname).toBe('/appregistry/api/v1/issuers');
   expect(new URL(url).searchParams.get('did')).toBe(issuer.did);
   expect(options.credentials).toBe('omit');
+ });
+ it('ignores environment supplied by existing PEP deployments', async () => {
+  const fetch = vi.fn().mockResolvedValue(Response.json({ ok: true, issuer: { ...issuer, environment: 'stage' } }));
+  const result = await fetchIssuerMetadata({ ...input, fetch });
+  expect(result).toEqual(issuer);
+  expect(result).not.toHaveProperty('environment');
  });
  it('returns null only for an explicit unknown issuer', async () => {
   expect(await fetchIssuerMetadata({ ...input, fetch: vi.fn().mockResolvedValue(Response.json({ok:false,error:{code:'ISSUER_NOT_FOUND'}},{status:404})) })).toBeNull();

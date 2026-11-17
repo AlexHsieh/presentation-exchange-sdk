@@ -134,7 +134,7 @@ GET /api/v1/issuers?did=<URL-encoded-issuer-DID>
 
 Use the registry base URL `https://stage.developer.iamhuman.link/appregistry` for stage and `https://developer.iamhuman.link/appregistry` for production. Local PEP uses `http://localhost:8090`. PEP supports the configured I Am Human issuer DID for its deployment; development and stage return `https://stage.iamhuman.link` as the issuer website, and production returns `https://iamhuman.link`.
 
-Success is `{ ok: true, issuer }`. The issuer contains `did`, `environment`, `name`, `description`, `iconUrl`, `websiteUrl`, `defaultLocale: "en"`, and `localizations["zh-Hant"]` with translated name and description. The complete HTTPS Firebase Storage `iconUrl` is authoritative: preserve its path and query parameters. No Firebase package or login is required. Metadata is cached for five minutes; versioned icons are cached for one year.
+Success is `{ ok: true, issuer }`. The SDK issuer metadata contains `did`, `name`, `description`, `iconUrl`, `websiteUrl`, `defaultLocale: "en"`, and `localizations["zh-Hant"]` with translated name and description. Additional API fields, including `environment`, are not exposed by the helper. The complete HTTPS Firebase Storage `iconUrl` is authoritative: preserve its path and query parameters. No Firebase package or login is required. Metadata is cached for five minutes; versioned icons are cached for one year.
 
 Missing, repeated, or malformed DID input returns HTTP 400 `INVALID_INPUT`. Unknown and other-environment DIDs return HTTP 404 `ISSUER_NOT_FOUND`. Errors use `{ ok: false, error: { code, message } }`.
 

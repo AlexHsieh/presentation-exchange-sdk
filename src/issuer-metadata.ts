@@ -1,7 +1,6 @@
 /** Public display metadata; never an issuer trust policy. */
 export interface IssuerMetadata {
   did: string;
-  environment: 'development' | 'stage' | 'production';
   name: string;
   description: string;
   iconUrl: string;
@@ -29,7 +28,6 @@ export function isIssuerMetadata(value: unknown, did?: string): value is IssuerM
   const v = value as IssuerMetadata;
   const translation = v.localizations?.['zh-Hant'];
   return typeof v.did === 'string' && (!did || v.did === did) &&
-    ['development', 'stage', 'production'].includes(v.environment) &&
     typeof v.name === 'string' && !!v.name.trim() && typeof v.description === 'string' && !!v.description.trim() &&
     isIssuerDisplayUrl(v.iconUrl) && isIssuerDisplayUrl(v.websiteUrl) && v.defaultLocale === 'en' &&
     !!translation && typeof translation.name === 'string' && !!translation.name.trim() &&
@@ -61,7 +59,8 @@ export async function fetchIssuerMetadata(input: FetchIssuerMetadataInput): Prom
     if (response.status === 404 && body?.ok === false && body?.error?.code === 'ISSUER_NOT_FOUND') return null;
     if (!response.ok) throw new IssuerMetadataError('FETCH_FAILED', 'Issuer request failed', response.status);
     if (body?.ok !== true || !isIssuerMetadata(body.issuer, input.did)) throw new IssuerMetadataError('INVALID_RESPONSE', 'Invalid issuer metadata', response.status);
-    return body.issuer;
+    const { did, name, description, iconUrl, websiteUrl, defaultLocale, localizations } = body.issuer;
+    return { did, name, description, iconUrl, websiteUrl, defaultLocale, localizations };
   } catch (error) {
     if (error instanceof IssuerMetadataError) throw error;
     throw new IssuerMetadataError('FETCH_FAILED', 'Issuer request failed or was cancelled');
