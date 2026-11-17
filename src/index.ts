@@ -32,3 +32,6 @@ export {
   TargetCredentialType,
 } from './constants.js';
 export type * from './types.js';
+
+export { fetchIssuerMetadata, IssuerMetadataError } from './issuer-metadata.js';
+export type { IssuerMetadata, FetchIssuerMetadataInput } from './issuer-metadata.js';
